@@ -1,0 +1,33 @@
+# 定时抓取关键词表：keywords 只搜索 B 站；抖音请配置 urls 订阅链接。
+# interval 控制该组的轮询周期，top_n 是每轮从搜索结果里取前几条。
+# 热点组周期要短，风格组可以放长 —— 古风曲库一天也长不出几首新的。
+groups:
+  - name: 情绪-忧伤
+    interval: 12h
+    top_n: 20
+    keywords: [忧伤音乐, 伤感BGM, 催泪纯音乐, 孤独感BGM, 破防音乐]
+
+  - name: 情绪-治愈
+    interval: 12h
+    top_n: 20
+    keywords: [治愈系音乐, 温柔BGM, 钢琴治愈, 解压音乐]
+
+  - name: 情绪-燃
+    interval: 12h
+    top_n: 20
+    keywords: [热血BGM, 燃向音乐, 战斗BGM, 燃爆全场]
+
+  - name: 场景-卡点
+    interval: 6h      # 热点组提高更新频率
+    top_n: 30
+    keywords: [卡点音乐, 抖音热歌, 最近很火的歌, 神级BGM]
+
+  - name: 风格-古风
+    interval: 24h
+    top_n: 15
+    keywords: [古风纯音乐, 国风BGM, 笛子古风]
+
+  - name: 搞笑
+    interval: 24h
+    top_n: 15
+    keywords: [搞笑音效, 鬼畜素材, 沙雕BGM]

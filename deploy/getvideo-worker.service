@@ -1,0 +1,17 @@
+[Unit]
+Description=GetVideo scheduled crawler
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/project/GetVideo
+ExecStart=/home/ubuntu/project/GetVideo/.venv/bin/python -m getvideo.cli crawl
+Restart=on-failure
+RestartSec=30
+TimeoutStopSec=120
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

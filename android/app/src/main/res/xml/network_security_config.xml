@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- 自建服务器多半是内网 HTTP，不强制 TLS。
+         公网部署时应删掉这段，改用 HTTPS。 -->
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

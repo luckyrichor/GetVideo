@@ -1,0 +1,33 @@
+name: Tests
+on: [push, pull_request]
+jobs:
+  server:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: python -m pip install -r requirements.txt
+      - run: python -m pytest tests/ -q
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
+          log-accepted-android-sdk-licenses: false
+      - run: ./gradlew testDebugUnitTest assembleDebug assembleRelease --console=plain
+        working-directory: android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GetVideo-apks
+          path: android/app/build/outputs/apk/**/*.apk
