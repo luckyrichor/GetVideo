@@ -1,6 +1,6 @@
 # GetVideo 0.2.0 AI 视频重建
 
-由 Codex 编写，2026-10-18（北京时间）。实现基于 GetVideo@9996b13，当前新增代码尚未提交；交付提交与测试结果见最终验证记录。本文件是实际实现说明；video-recreation-proposal.md 属于设计草案。
+由 Codex 编写，2026-10-18（北京时间）。实现代码版本 GetVideo@cf7a3ff（基于 9996b13）；以下验证对应 cf7a3ff，本次后续提交仅补充交付记录。本文件是实际实现说明；video-recreation-proposal.md 属于设计草案。
 
 ## 操作
 
@@ -49,3 +49,22 @@ nginx 的精确 `/v2/recreations/upload` 路由允许 256 MiB 流式上传，其
 已用独立临时数据库及自造 4 秒测试视频走通真实 Ark：上传、Pro 画面分析、Mini 声音分析、文字生成、异步轮询、下载、音轨合成、哈希及视频库入库。输出 4 秒，367281 字节；生成用量 39285 tokens，存在实际平台用量，不宣称免费。
 
 首帧请求结构、原文完整传输及失败路径通过适配器测试；真实生成验收使用纯文字 480p，未对所有分辨率进行付费穷举。手机验证包含协议测试和 APK 构建；当前机器没有连接 Android 真机，未声称触屏实测。
+
+
+## 交付验证记录（2026-10-18，北京时间）
+
+验证代码版本 `GetVideo@cf7a3ff`：
+
+- 服务端完整回归：185 passed，13.70 秒，1 条既有 Starlette/httpx 弃用警告。
+- Android：62 项单元测试，0 失败；`testDebugUnitTest assembleDebug assembleRelease assembleDebugAndroidTest --offline --console=plain` 全部成功。最终增量构建耗时 31 秒；仪器测试包已编译，未连接真机执行。
+- APK：`com.getvideo.app`，versionName 0.2.0，versionCode 4，minSdk 26 / targetSdk 34。release 仍用现有开发签名，证书 SHA-256 `25302366b97b6ccc3fb7e0e6e4df642f809fe2cf401c485ca2ed2ee27960dc57`，与原 0.1.0 安装包一致。
+- TX 已安装并启动独立 API / AI worker，worker 无重启。HTTPS 健康检查返回 GetVideo 0.2.0；未登录访问 AI 接口返回 401。临时自检账号验证模型配置、超过 2 MiB 的真实 HTTPS 视频上传、私有素材 Range 206；未触发模型调用，自检账号、会话及素材已删除。
+- 原 GetAudio 8800 健康检查正常；配置和服务未更改。升级前已备份原代码、数据库、项目环境及 GetVideo 服务/nginx 配置到本机独立权限目录。
+- 实际共享 Ark/Tencent 密钥扫描已通过；Git 中没有凭据或模型媒体 payload。生成结果及 APK 位于忽略 Git 的 artifacts/；安装包另通过飞书文件交付。
+
+安装包 SHA-256：
+
+```text
+b869f58d62ad02a750f462b6f26e1da8c6f3898f56b1cb3e91e8dc91851b71e6  artifacts/GetVideo-0.2.0-debug.apk
+3d0916736dedc44402ae4193d87ca326a04f380aece225a551c01d20c991c1da  artifacts/GetVideo-0.2.0-release.apk
+```
