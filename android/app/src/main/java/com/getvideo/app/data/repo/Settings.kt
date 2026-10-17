@@ -7,6 +7,8 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 private val Context.dataStore by preferencesDataStore("settings")
@@ -14,7 +16,7 @@ private val Context.dataStore by preferencesDataStore("settings")
 /** 可选同步服务器地址和用户 id；手机直接提取不需要服务器。 */
 class Settings(private val context: Context) {
 
-    // The production server is reachable directly from the phone.
+    // Independent TX HTTPS endpoint; an explicitly saved empty value remains local-only.
     companion object { const val DEFAULT_SERVER_URL = TX_SERVER_URL }
 
     private val serverKey = stringPreferencesKey("server_url")
@@ -27,8 +29,11 @@ class Settings(private val context: Context) {
     suspend fun setServerUrl(url: String) {
         // 结尾必须有斜杠，否则 Retrofit 会把 baseUrl 的最后一段吃掉
         val normalized = url.trim().takeIf { it.isNotEmpty() }?.trimEnd('/')?.plus("/") ?: ""
-        context.dataStore.edit { it[serverKey] = normalized }
-        AccountStore.refreshVisibility(context)
+        // Once committed, finish account visibility and queue reconciliation even if the dialog closes.
+        withContext(NonCancellable) {
+            context.dataStore.edit { it[serverKey] = normalized }
+            AccountStore.refreshVisibility(context)
+        }
     }
 
     suspend fun serverUrlNow(): String = serverUrl.first()

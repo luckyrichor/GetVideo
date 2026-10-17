@@ -3,6 +3,17 @@ import pytest
 from getvideo.extractors.base import ExtractorError
 from getvideo.extractors.douyin import DouyinExtractor
 
+def test_share_watermark_endpoint_and_download_fallback_order():
+    aweme = {"video": {
+        "play_addr": {"url_list": ["https://aweme.snssdk.com/aweme/v1/playwm/?video_id=abc&ratio=720p"]},
+        "download_addr": {"url_list": ["https://example.com/download.mp4"]},
+        "bit_rate": [{"play_addr": {"url_list": ["https://example.com/clean.mp4"]}}],
+    }}
+    assert DouyinExtractor()._video_sources(aweme)[1] == [
+        "https://aweme.snssdk.com/aweme/v1/play/?video_id=abc&ratio=720p",
+        "https://example.com/clean.mp4", "https://example.com/download.mp4",
+    ]
+
 @pytest.mark.parametrize("music_duration", [None, 21, 300])
 def test_complete_video_always_selected(music_duration):
     aweme = {"duration": 245000, "music": {"duration": music_duration,

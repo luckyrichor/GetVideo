@@ -7,6 +7,7 @@ Wants=network-online.target
 Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu/project/GetVideo
+EnvironmentFile=/home/ubuntu/project/GetVideo/.env
 ExecStart=/home/ubuntu/project/GetVideo/.venv/bin/uvicorn getvideo.api:app --host 127.0.0.1 --port 8900
 Restart=on-failure
 RestartSec=10

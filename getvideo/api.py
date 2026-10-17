@@ -52,7 +52,7 @@ class PlatformCallbackAccessFilter(logging.Filter):
 
 logging.getLogger("uvicorn.access").addFilter(PlatformCallbackAccessFilter())
 
-app = FastAPI(title="GetVideo", version="0.1.0", lifespan=lifespan,
+app = FastAPI(title="GetVideo", version="0.1.2", lifespan=lifespan,
               dependencies=[Depends(accounts.protect_account_ids)])
 app.include_router(accounts.router)
 app.include_router(extraction_agent.router)
@@ -214,7 +214,7 @@ class AgentMemoryOut(BaseModel):
 
 @app.get("/health")
 def health() -> dict:
-    return {"ok": True}
+    return {"ok": True, "app": "GetVideo", "version": app.version}
 
 
 @app.post("/agent/chat", response_model=AgentChatResponse)

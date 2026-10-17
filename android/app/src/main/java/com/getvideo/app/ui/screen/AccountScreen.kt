@@ -22,8 +22,7 @@ fun AccountScreen() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val saved by AccountStore.current.collectAsState()
-    var server by remember { mutableStateOf("") }
-    LaunchedEffect(Unit) { server = Settings(context).serverUrlNow() }
+    val server by remember(context) { Settings(context).serverUrl }.collectAsState(initial = "")
     val account = saved?.takeIf { it.serverUrl == server }
     var phone by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -31,6 +30,16 @@ fun AccountScreen() {
     var register by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+    var showServerSettings by remember { mutableStateOf(false) }
+    if (showServerSettings) ServerSettingsDialog { showServerSettings = false }
+    if (server.isBlank() || runCatching { AccountStore.requireSecureServer(server) }.isFailure) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("GetVideo 账号", style = MaterialTheme.typography.titleLarge)
+            PlatformAccountPanel(server, null, saved)
+            OutlinedButton(onClick = { showServerSettings = true }) { Text("配置服务器") }
+        }
+        return
+    }
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("GetVideo 账号", style = MaterialTheme.typography.titleLarge)
         Text("登录后可使用服务器提取、云端同步和视频助手。首次必须手机号注册；登录后可绑定抖音和 B站，之后通过已绑定的平台登录同一个手机号账号。", style = MaterialTheme.typography.bodySmall)

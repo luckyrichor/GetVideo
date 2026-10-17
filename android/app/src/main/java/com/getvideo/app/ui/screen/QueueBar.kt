@@ -37,9 +37,9 @@ fun QueueBar() {
     var showVideo by remember { mutableStateOf(false) }
     val currentId = queue.getOrNull(index)?.track?.id
     LaunchedEffect(currentId) { if (currentId != null) showVideo = true }
-    if (showVideo && queue.isNotEmpty()) VideoPlaybackDialog { showVideo = false }
     if (queue.isNotEmpty()) {
         Column {
+            if (showVideo) VideoPlaybackPanel { showVideo = false }
             HorizontalDivider()
             Row(Modifier.fillMaxWidth().height(88.dp).padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f).padding(end = 8.dp).clickable { showVideo = true }) {

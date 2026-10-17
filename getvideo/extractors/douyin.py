@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
@@ -192,10 +193,23 @@ def _video_urls(aweme: dict) -> list[str]:
     video = aweme.get("video") or {}
     urls: list[str] = []
     # play_addr 系列里 h264/bit_rate 通常是无水印源
-    for key in ("play_addr_h264", "play_addr", "play_addr_265", "download_addr"):
+    for key in ("play_addr_h264", "play_addr", "play_addr_265"):
         urls.extend(_url_list(video.get(key)))
     for br in video.get("bit_rate") or []:
         urls.extend(_url_list(br.get("play_addr")))
+    urls = [_clean_playback_url(url) for url in urls]
+    urls.extend(_url_list(video.get("download_addr")))
     # 去重保序
     seen: set[str] = set()
     return [u for u in urls if not (u in seen or seen.add(u))]
+
+
+def _clean_playback_url(url: str) -> str:
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    if parts.path == "/aweme/v1/playwm/" and any(
+        host == domain or host.endswith("." + domain)
+        for domain in ("snssdk.com", "douyin.com", "iesdouyin.com", "amemv.com")
+    ):
+        return urlunsplit(parts._replace(path="/aweme/v1/play/"))
+    return url

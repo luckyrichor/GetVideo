@@ -1,0 +1,8 @@
+[Unit]
+Description=Renew independent GetVideo HTTPS certificate
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/getaudio-certbot/bin/certbot renew --config-dir /etc/getvideo-letsencrypt --work-dir /var/lib/getvideo-certbot --logs-dir /var/log/getvideo-certbot --quiet --deploy-hook "/usr/sbin/nginx -t && /usr/bin/systemctl reload nginx"

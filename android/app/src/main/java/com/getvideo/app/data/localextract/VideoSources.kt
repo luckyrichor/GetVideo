@@ -2,6 +2,7 @@ package com.getvideo.app.data.localextract
 
 import org.json.JSONArray
 import org.json.JSONObject
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /** Keep selection independent of Android so platform response fixtures can be tested. */
 internal object VideoSources {
@@ -15,13 +16,22 @@ internal object VideoSources {
 
     fun douyin(detail: JSONObject): List<String> {
         val video = detail.optJSONObject("video")
-        val selected = (listOf("play_addr_h264", "play_addr", "play_addr_265", "download_addr")
+        val playback = (listOf("play_addr_h264", "play_addr", "play_addr_265")
             .flatMap { urls(video?.optJSONObject(it)) } +
             (video?.optJSONArray("bit_rate")?.let { rates ->
                 (0 until rates.length()).flatMap { urls(rates.optJSONObject(it)?.optJSONObject("play_addr")) }
-            } ?: emptyList())).distinct()
+            } ?: emptyList()))
+        val selected = (playback.map(::cleanDouyinPlayback) + urls(video?.optJSONObject("download_addr"))).distinct()
         require(selected.isNotEmpty()) { "抖音没有返回视频地址，音乐不能替代视频" }
         return selected
+    }
+
+    private fun cleanDouyinPlayback(raw: String): String {
+        val url = raw.toHttpUrlOrNull() ?: return raw
+        val host = url.host
+        if (listOf("snssdk.com", "douyin.com", "iesdouyin.com", "amemv.com").none { host == it || host.endsWith(".$it") }) return raw
+        if (url.encodedPath != "/aweme/v1/playwm/") return raw
+        return url.newBuilder().encodedPath("/aweme/v1/play/").build().toString()
     }
 
     fun bilibili(dash: JSONObject): Streams {

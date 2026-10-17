@@ -121,7 +121,7 @@ fun LoginScreen() {
     val server by remember(context) { com.getvideo.app.data.repo.Settings(context).serverUrl }.collectAsState(initial = "")
     val owner = account?.takeIf { it.serverUrl == server }
     if (owner == null) {
-        Column(Modifier.verticalScroll(rememberScrollState())) {
+        Column(Modifier.fillMaxSize()) {
             Text("请先登录 GetVideo 账号，再授权抖音或 B站。", Modifier.padding(16.dp))
             AccountScreen()
         }

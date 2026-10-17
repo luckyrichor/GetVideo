@@ -5,6 +5,10 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class VideoSourcesTest {
+    @Test fun `share page watermark endpoint uses clean playback before download fallback`() {
+        val detail = JSONObject("""{"video":{"play_addr":{"url_list":["https://aweme.snssdk.com/aweme/v1/playwm/?video_id=abc&ratio=720p"]},"download_addr":{"url_list":["https://example.com/download.mp4"]},"bit_rate":[{"play_addr":{"url_list":["https://example.com/clean.mp4"]}}]}}""")
+        assertEquals(listOf("https://aweme.snssdk.com/aweme/v1/play/?video_id=abc&ratio=720p", "https://example.com/clean.mp4", "https://example.com/download.mp4"), VideoSources.douyin(detail))
+    }
     @Test fun `music never substitutes video even when longer`() {
         val detail = JSONObject("""{"music":{"duration":300,"play_url":{"url_list":["https://example.com/music.mp3"]}},"video":{"play_addr":{"url_list":["https://example.com/video.mp4"]}}}""")
         assertEquals(listOf("https://example.com/video.mp4"), VideoSources.douyin(detail))
