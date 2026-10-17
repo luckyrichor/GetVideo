@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 _test_dir = TemporaryDirectory(prefix="getvideo-tests-")
 _root = Path(_test_dir.name)
 os.environ["GETVIDEO_DATABASE_URL"] = f"sqlite:///{_root / 'test.db'}"
-for _name in ("audio", "tmp", "cookie"):
+for _name in ("audio", "tmp", "cookie", "recreation"):
     os.environ[f"GETVIDEO_{_name.upper()}_DIR"] = str(_root / _name)
 os.environ["GETVIDEO_SECRET_KEY"] = base64.urlsafe_b64encode(os.urandom(32)).decode()
 os.environ["GETVIDEO_OLLAMA_MODEL"] = ""

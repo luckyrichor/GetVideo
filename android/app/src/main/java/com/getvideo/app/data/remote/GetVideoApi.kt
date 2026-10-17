@@ -9,6 +9,20 @@ import retrofit2.http.Path
 import retrofit2.http.Query
 
 interface GetVideoApi {
+    @GET("v2/recreations/capabilities") suspend fun recreationCapabilities(): RecreationCapabilities
+    @GET("v2/recreations") suspend fun recreationProjects(): List<RecreationProjectDto>
+    @POST("v2/recreations/upload") suspend fun recreationUpload(
+        @Query("request_key") key: String, @Query("title") title: String,
+        @Query("analyze_audio") analyzeAudio: Boolean, @Body video: okhttp3.RequestBody,
+    ): RecreationProjectDto
+    @POST("v2/recreations/from-track/{trackId}") suspend fun recreationFromTrack(@Path("trackId") trackId: Long, @Body body: RecreationKeyBody): RecreationProjectDto
+    @GET("v2/recreations/{id}") suspend fun recreationProject(@Path("id") id: String): RecreationProjectDto
+    @POST("v2/recreations/{id}/analyze") suspend fun recreationAnalyze(@Path("id") id: String, @Body body: RecreationAnalyzeBody): RecreationProjectDto
+    @PUT("v2/recreations/{id}/description") suspend fun recreationEdit(@Path("id") id: String, @Body body: RecreationDescriptionEdit): RecreationProjectDto
+    @POST("v2/recreations/{id}/generate") suspend fun recreationGenerate(@Path("id") id: String, @Body body: RecreationGenerateBody): RecreationProjectDto
+    @POST("v2/recreations/{id}/runs/{runId}/cancel") suspend fun recreationCancel(@Path("id") id: String, @Path("runId") runId: String): RecreationProjectDto
+    @POST("v2/recreations/{id}/runs/{runId}/save") suspend fun recreationSave(@Path("id") id: String, @Path("runId") runId: String): TrackDto
+
     @GET("account/platforms") suspend fun platformLoginCapabilities(): List<PlatformLoginCapability>
     @GET("account/platform-bindings") suspend fun platformAccountBindings(): List<PlatformAccountBinding>
     @POST("account/platform-auth/start") suspend fun platformAuthStart(@Body body: PlatformAuthStart): PlatformAuthTicket

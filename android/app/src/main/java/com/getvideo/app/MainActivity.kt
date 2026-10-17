@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.AutoAwesome
+import com.getvideo.app.ui.screen.RecreationScreen
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,6 +26,7 @@ import com.getvideo.app.ui.theme.GetVideoTheme
 private enum class Tab(val label: String, val icon: ImageVector) {
     LIBRARY("视频库", Icons.Default.LibraryMusic),
     EXTRACT("提取", Icons.Default.Link),
+    AI("AI 重建", Icons.Default.AutoAwesome),
     MY("我的", Icons.Default.Person),
 }
 
@@ -68,6 +71,7 @@ class MainActivity : ComponentActivity() {
                         when (tab) {
                             Tab.LIBRARY -> LibraryScreenV2(openCategories)
                             Tab.EXTRACT -> ExtractScreen(prefill = shared, onSharedConsumed = { shared = null })
+                            Tab.AI -> RecreationScreen()
                             Tab.MY -> MyScreen()
                         }
                     }

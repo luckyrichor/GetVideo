@@ -1,0 +1,19 @@
+[Unit]
+Description=GetVideo AI analysis and video generation worker
+After=network-online.target getvideo-api.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/project/GetVideo
+EnvironmentFile=/home/ubuntu/project/GetVideo/.env
+EnvironmentFile=/home/ubuntu/.config/llm/volcengine.env
+ExecStart=/home/ubuntu/project/GetVideo/.venv/bin/python -m getvideo.recreation_worker
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

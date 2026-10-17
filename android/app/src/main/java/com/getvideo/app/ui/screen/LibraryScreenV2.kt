@@ -84,6 +84,7 @@ fun LibraryScreenV2(openCategories: Boolean = false) {
     var startMs by remember { mutableStateOf<Long?>(null) }
     var endTimeMs by remember { mutableStateOf<Long?>(null) }
     var dateDialog by remember { mutableStateOf(false) }
+    var recreationTrack by remember { mutableStateOf<TrackEntity?>(null) }
     var editTrack by remember { mutableStateOf<TrackEntity?>(null) }
     var restoreTrack by remember { mutableStateOf<TrackEntity?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
@@ -286,6 +287,7 @@ fun LibraryScreenV2(openCategories: Boolean = false) {
         dismissButton = { TextButton(onClick = { confirmBatchDelete = false }, enabled = !deleting) { Text("取消") } },
     )
 
+    recreationTrack?.let { RecreationDialog(it) { recreationTrack = null } }
     editTrack?.let { track -> AudioEditScreen(track, onClose = { editTrack = null }, onSaved = { editTrack = null; notice = "剪辑已保存" }) }
     restoreTrack?.let { track -> AlertDialog(onDismissRequest = { restoreTrack = null }, title = { Text("恢复服务器原版？") }, text = { Text("本地剪辑版将替换为服务器原版，收藏与播放列表保留。") }, confirmButton = { TextButton(onClick = { restoreTrack = null; operate { trackRepo.restoreOriginal(track.id); notice = "已恢复原版" } }) { Text("恢复") } }, dismissButton = { TextButton(onClick = { restoreTrack = null }) { Text("取消") } }) }
 
@@ -314,6 +316,7 @@ fun LibraryScreenV2(openCategories: Boolean = false) {
                     MusicMenuAction("删除", Icons.Default.DeleteOutline, destructive = true, onClick = { dialog = "delete" })
                 }
                 if (item is LibraryTarget.Audio) {
+                    MusicMenuAction("AI 描述与生成", Icons.Default.AutoAwesome, onClick = { recreationTrack = item.track; target = null })
                     MusicMenuAction("剪辑视频", Icons.Default.ContentCut, status = if (item.track.locallyEdited) "本地剪辑版" else null, onClick = { editTrack = item.track; target = null })
                     if (item.track.locallyEdited && item.track.id > 0) MusicMenuAction("恢复服务器原版", Icons.Default.Restore, onClick = { restoreTrack = item.track; target = null })
                 }

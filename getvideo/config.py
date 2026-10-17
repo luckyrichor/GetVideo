@@ -34,6 +34,17 @@ class Settings(BaseSettings):
     ark_models: str = "doubao-seed-2-0-mini-260428,doubao-seed-2-1-pro-260915"
     classify_timeout: float = 60.0
 
+    # AI video jobs use the server's shared Ark identity, never an APK key.
+    recreation_dir: Path = ROOT / "data" / "recreation"
+    recreation_analysis_model: str = "doubao-seed-2-1-pro-260915"
+    recreation_audio_model: str = "doubao-seed-2-0-mini-260428"
+    recreation_generation_model: str = "doubao-seedance-1-0-pro-fast-251015"
+    recreation_max_bytes: int = 256 * 1024 * 1024
+    recreation_max_seconds: float = 300.0
+    recreation_clip_seconds: int = 10
+    recreation_allowed_users: str = ""  # Optional comma-separated GetVideo user IDs.
+    recreation_model_timeout: float = 180.0
+
     # Only server-side credentials; OAuth is disabled until all three are configured.
     douyin_client_key: str = ""
     douyin_client_secret: str = ""

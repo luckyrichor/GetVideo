@@ -91,6 +91,7 @@ def test_all_api_routes_are_declared_in_kotlin():
     skip = {"/health", "/login/qr/{session_id}/image", "/video/{track_id}", "/login/platforms"}
 
     skip.add("/account/platform-auth/douyin/callback")
+    skip.update({"/v2/recreations/{pid}/source", "/v2/recreations/{pid}/runs/{rid}/video"})
     skip.update({"/v2/platforms", "/v2/platforms/qr/{sid}/image", "/v2/video/{track_id}"})
     for path in server_api.app.openapi()["paths"]:
         # Legacy admin/guest API is deliberately no longer the mobile contract.

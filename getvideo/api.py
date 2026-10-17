@@ -52,7 +52,7 @@ class PlatformCallbackAccessFilter(logging.Filter):
 
 logging.getLogger("uvicorn.access").addFilter(PlatformCallbackAccessFilter())
 
-app = FastAPI(title="GetVideo", version="0.1.2", lifespan=lifespan,
+app = FastAPI(title="GetVideo", version="0.2.0", lifespan=lifespan,
               dependencies=[Depends(accounts.protect_account_ids)])
 app.include_router(accounts.router)
 app.include_router(extraction_agent.router)
@@ -445,3 +445,7 @@ app.include_router(account_resource_router)
 
 from .platform_accounts import router as platform_account_router
 app.include_router(platform_account_router)
+
+
+from .recreation_api import router as recreation_router
+app.include_router(recreation_router)
