@@ -1,6 +1,8 @@
 package com.getvideo.app.data.repo
 
 import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.room.withTransaction
 import com.getvideo.app.player.PlayerHolder
 import com.getvideo.app.data.local.AppDatabase
@@ -324,6 +326,106 @@ class TrackRepository(private val context: Context) {
                 saved
             }
         } catch (e: Exception) { if (!committed) staged.delete(); throw e }
+    }
+
+    // ---------- 导入本地视频 ----------
+
+    /**
+     * 把系统文件选择器选中的视频复制进应用私有目录并入库。
+     *
+     * 场景：重装/换机后把之前导出的视频搬回来，或把手里的本地文件加进库。
+     * id 由文件内容的 sha256 派生（负数，与云端 id 不冲突），同一个文件重复导入不会产生副本。
+     */
+    suspend fun importVideo(uris: List<Uri>, onProgress: (String) -> Unit = {}): Result<Int> = runCatching {
+        withContext(Dispatchers.IO) {
+            var added = 0
+            uris.forEachIndexed { index, uri ->
+                val name = displayName(uri)?.takeIf { it.isNotBlank() } ?: "未命名视频"
+                val title = titleOf(name)
+                onProgress("正在导入 ${index + 1}/${uris.size}：$title")
+                val staged = File.createTempFile("import-", ".part", context.cacheDir)
+                try {
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        staged.outputStream().use { out -> input.copyTo(out) }
+                    } ?: error("无法读取：$title")
+                    if (staged.length() <= 0L) error("文件为空：$title")
+                    val hash = sha256(staged)
+                    val id = importId(hash)
+                    val dest = File(audioDir, "$id.mp4")
+                    if (dest.exists() && dest.length() == staged.length()) {
+                        onProgress("已在库中：$title")
+                        return@forEachIndexed
+                    }
+                    fileMutex.withLock {
+                        if (dest.exists() && !dest.delete()) error("无法覆盖：$title")
+                        if (!staged.renameTo(dest)) {
+                            staged.copyTo(dest, overwrite = true)
+                            staged.delete()
+                        }
+                        trackDao.upsertLocal(TrackEntity(
+                            id = id,
+                            platform = "local",
+                            videoId = title,
+                            title = title,
+                            uploader = null,
+                            durationSec = durationOf(dest),
+                            audioBytes = dest.length(),
+                            audioFormat = name.substringAfterLast('.', "mp4").lowercase(),
+                            sourceUrl = "",
+                            downloadUrl = "",
+                            updatedSeq = System.currentTimeMillis(),
+                            audioSha256 = hash,
+                            localPath = dest.absolutePath,
+                            cloudScope = "local",
+                        ))
+                    }
+                    added++
+                } finally {
+                    staged.delete()
+                }
+            }
+            onProgress("导入完成：$added 个")
+            added
+        }
+    }
+
+    private fun displayName(uri: Uri): String? = runCatching {
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getString(0) else null
+        }
+    }.getOrNull()
+
+    private fun titleOf(name: String): String =
+        name.substringAfterLast('/').substringBeforeLast('.').ifBlank { name }.trim()
+
+    private fun durationOf(file: File): Double? = runCatching {
+        val retriever = android.media.MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(file.absolutePath)
+            retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toDoubleOrNull()?.div(1000.0)
+        } finally {
+            retriever.release()
+        }
+    }.getOrNull()
+
+    private fun sha256(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(65536)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                digest.update(buffer, 0, count)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private fun importId(hash: String): Long {
+        val bytes = MessageDigest.getInstance("SHA-256").digest("import:$hash".toByteArray())
+        val positive = java.nio.ByteBuffer.wrap(bytes).long and Long.MAX_VALUE
+        return -(positive.takeIf { it > 0 } ?: 1L)
     }
 
     /** 批量补齐未下载的视频，返回成功条数。给 WorkManager 用。 */

@@ -63,9 +63,6 @@ class MainActivity : ComponentActivity() {
                 var shared by remember { mutableStateOf(sharedText(intent)) }
                 var tab by remember { mutableStateOf(if (shared != null) Tab.EXTRACT else Tab.LIBRARY) }
                 var openCategories by remember { mutableStateOf(false) }
-                // 只看背景：把列表和底栏都收起来，只留一张壁纸。
-                var bgOnly by remember { mutableStateOf(false) }
-                BackHandler(enabled = bgOnly) { bgOnly = false }
 
                 DisposableEffect(Unit) {
                     val listener = { newIntent: Intent ->
@@ -83,12 +80,6 @@ class MainActivity : ComponentActivity() {
                 ) {
                     Box(Modifier.fillMaxSize()) {
                         BackgroundLayer()
-                        if (bgOnly) {
-                            BackgroundOnlyOverlay(
-                                hasBackground = background.enabled,
-                                onExit = { bgOnly = false },
-                            )
-                        } else {
                         Scaffold(
                     containerColor = Color.Transparent,
                     bottomBar = {
@@ -120,7 +111,7 @@ class MainActivity : ComponentActivity() {
                     Surface(Modifier.fillMaxSize().padding(padding), color = Color.Transparent) {
                         Box(Modifier.fillMaxSize()) {
                             when (tab) {
-                                Tab.LIBRARY -> LibraryScreenV2(openCategories, onBackgroundOnly = { bgOnly = true })
+                                Tab.LIBRARY -> LibraryScreenV2(openCategories)
                                 Tab.EXTRACT -> ExtractScreen(prefill = shared, onSharedConsumed = { shared = null })
                                 Tab.AI -> RecreationScreen()
                                 Tab.MY -> MyScreen()
@@ -144,7 +135,6 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
-                        }
                     }
                 }
             }
@@ -155,48 +145,4 @@ class MainActivity : ComponentActivity() {
         if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
             intent.getStringExtra(Intent.EXTRA_TEXT)?.takeIf { it.isNotBlank() }
         } else null
-}
-
-/**
- * 只看背景模式：除了一张壁纸和一个退出按钮，其它一律不画。
- * 按钮用不透明卡片垫底，任何图上都看得清、点得到。
- */
-@Composable
-private fun BackgroundOnlyOverlay(hasBackground: Boolean, onExit: () -> Unit) {
-    Column(
-        Modifier
-            .fillMaxSize()
-            .navigationBarsPadding()
-            .padding(start = 24.dp, end = 24.dp, bottom = 40.dp),
-        verticalArrangement = Arrangement.Bottom,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        if (!hasBackground) {
-            Text(
-                "还没有设置背景图 · 可在「我的 → 外观」里选一张",
-                Modifier.padding(bottom = 12.dp),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
-            shadowElevation = 3.dp,
-        ) {
-            Row(
-                Modifier.clickable(onClick = onExit).padding(horizontal = 20.dp, vertical = 11.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    Icons.Default.VisibilityOff,
-                    contentDescription = null,
-                    modifier = Modifier.size(17.dp),
-                    tint = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(Modifier.width(8.dp))
-                Text("退出背景", style = MaterialTheme.typography.labelLarge)
-            }
-        }
-    }
 }

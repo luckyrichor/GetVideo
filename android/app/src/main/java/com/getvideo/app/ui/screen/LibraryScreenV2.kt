@@ -69,7 +69,7 @@ private sealed interface LibraryTarget {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun LibraryScreenV2(openCategories: Boolean = false, onBackgroundOnly: () -> Unit = {}) {
+fun LibraryScreenV2(openCategories: Boolean = false) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val db = remember { AppDatabase.get(context) }
@@ -140,6 +140,17 @@ fun LibraryScreenV2(openCategories: Boolean = false, onBackgroundOnly: () -> Uni
             }.onFailure { notice = it.message ?: "下载失败" }
         }
         exportTrack = null
+    }
+    var importing by remember { mutableStateOf(false) }
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        scope.launch {
+            importing = true
+            runCatching { DiagnosticsStore.operation("导入本地视频") { trackRepo.importVideo(uris).getOrThrow() } }
+                .onSuccess { notice = if (it == 0) "没有新增视频（都已在库中）" else "已导入 $it 个视频" }
+                .onFailure { notice = it.message ?: "导入失败" }
+            importing = false
+        }
     }
     LaunchedEffect(notice) { notice?.let { snackbar.showSnackbar(it); notice = null } }
 
@@ -265,13 +276,15 @@ fun LibraryScreenV2(openCategories: Boolean = false, onBackgroundOnly: () -> Uni
                             Text("取消定时播放")
                         }
                     }
+                    // 导入本地视频：把系统文件选择器里选中的视频复制进库。
+                    AssistChip(
+                        onClick = { importLauncher.launch(arrayOf("video/*")) },
+                        enabled = !importing,
+                        label = { Text(if (importing) "导入中…" else "导入", style = MaterialTheme.typography.labelLarge) },
+                        leadingIcon = { Icon(Icons.Default.Add, null, Modifier.size(16.dp)) },
+                        shape = RoundedCornerShape(12.dp),
+                    )
                     Spacer(Modifier.weight(1f))
-                    // 只留背景：隐藏列表和底部导航，专心看壁纸。
-                    AreaButton(onClick = onBackgroundOnly) {
-                        Icon(Icons.Default.Wallpaper, null, Modifier.size(15.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("只看背景")
-                    }
                 }
                 if (startMs != null || endTimeMs != null) {
                     AreaButton(onClick = { startMs = null; endTimeMs = null }) { Text("${startMs?.let { displayDateTime(it) } ?: "不限"} ~ ${endTimeMs?.let { displayDateTime(it) } ?: "不限"} ×") }
