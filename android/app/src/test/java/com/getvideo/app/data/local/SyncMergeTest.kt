@@ -4,7 +4,21 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SyncMergeTest {
-    private val server = TrackEntity(1, "bilibili", "BV1", "原版", null, 300.0, 1000, "m4a", "", "/audio/1", 10, audioSha256 = "original")
+    // 用命名参数：TrackEntity 以后再插字段也不会把这里的位置参数挤错位。
+    private val server = TrackEntity(
+        id = 1,
+        platform = "bilibili",
+        videoId = "BV1",
+        title = "原版",
+        uploader = null,
+        durationSec = 300.0,
+        audioBytes = 1000L,
+        audioFormat = "m4a",
+        sourceUrl = "",
+        downloadUrl = "/audio/1",
+        updatedSeq = 10,
+        audioSha256 = "original",
+    )
     @Test fun serverChangesCannotOverwriteLocalEdit() {
         val edited = server.copy(title = "剪辑版", durationSec = 70.0, audioBytes = 250, audioSha256 = "edit", localPath = "/local/edit.m4a", locallyEdited = true, favorite = true, localCategoryId = 4)
         assertEquals(edited.copy(updatedSeq = 11), mergeServerTrack(server.copy(updatedSeq = 11, audioSha256 = "newServerFile"), edited, 100))

@@ -5,8 +5,21 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class QueueRulesTest {
+    // 用命名参数：TrackEntity 以后再插字段也不会把这里的位置参数挤错位。
     private fun track(id: Long, video: String = "$id", hash: String? = null) = TrackEntity(
-        id, "douyin", video, "视频$id", null, 30.0, 100L, "m4a", "", "", 0, audioSha256 = hash)
+        id = id,
+        platform = "douyin",
+        videoId = video,
+        title = "视频$id",
+        uploader = null,
+        durationSec = 30.0,
+        audioBytes = 100L,
+        audioFormat = "m4a",
+        sourceUrl = "",
+        downloadUrl = "",
+        updatedSeq = 0,
+        audioSha256 = hash,
+    )
     @Test fun sameIdCannotBeAddedAgainAfterRename() {
         val old = track(1)
         assertEquals(emptyList<TrackEntity>(), newQueueTracks(listOf(old), listOf(old.copy(title = "新名称"))))

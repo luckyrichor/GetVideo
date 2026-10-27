@@ -41,6 +41,29 @@ APK，装到手机上才发现撞墙。现在宁可编译报错，也不让不�
 请把项目密钥安装到本机后再构建： ./scripts/setup-release-key.sh
 ```
 
+properties 格式：
+
+```properties
+storeFile=/Users/lc/.android-keys/getvideo-release.jks
+storePassword=***
+keyAlias=getvideo
+keyPassword=***
+```
+
+## CI（GitHub Actions）为什么不出正式包
+
+`.github/workflows/tests.yml` 只跑 `./gradlew testDebugUnitTest assembleDebug`：
+
+- 密钥按设计不进 CI（不放 Secrets，避免泄露），runner 上自然没有 `~/.android-keys/`；
+- 硬跑 `assembleRelease` 会被上面的强制检查拦住 → 每次 push 都红 → 每天一堆「Run failed」邮件。
+  2026-10-27 就踩过一次：加了强制检查后本仓库的 CI（里面带 `assembleRelease`）连续失败。
+
+所以 CI 只负责「代码能编、测试能过」，正式包一律在本机构建。
+
+另外强制检查是按**任务名**判断的（`assembleRelease` / `bundleRelease` / `build` / `assemble`），
+`testDebugUnitTest`、`assembleDebug` 和 IDE 同步（taskNames 为空）都不会被拦——
+否则 CI 和 Android Studio 在没装密钥的机器上会直接开不了工。
+
 ## 新环境怎么开工（换电脑 / 换 Agent / CI）
 
 密钥不在仓库里，所以**任何新环境第一次构建前都要先装密钥**：
@@ -56,15 +79,6 @@ scripts/setup-release-key.sh ~/bak    # 或者从本地备份目录拷贝
 > 注意：让 Agent（不论跑在 Mac 还是服务器）改功能都没问题——**只要它在这台机器上构建**，
 > 用的就是 `~/.android-keys/` 里这把证书。真正需要额外一步的只有"在一台全新机器上构建"，
 > 那种情况先跑上面的脚本。
-
-properties 格式：
-
-```properties
-storeFile=/Users/lc/.android-keys/getvideo-release.jks
-storePassword=***
-keyAlias=getvideo
-keyPassword=***
-```
 
 ## 日常命令
 

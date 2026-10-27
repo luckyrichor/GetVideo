@@ -23,7 +23,18 @@ val releaseSigning: Properties? = sequenceOf(
     props.getProperty("storeFile")?.let { File(it).isFile } == true
 }
 
-if (releaseSigning == null && providers.gradleProperty("allowDebugSignRelease").orNull != "true") {
+// 只在"真的要产出 release 包"时才强制要密钥。
+// 配置阶段会跑在任何任务之前，所以不能无条件 throw——否则 CI 里的 assembleDebug / testDebugUnitTest
+// （CI 上按设计没有密钥）也会被一起打断。IDE 同步时 taskNames 为空，同样放行。
+val releaseTaskRequested: Boolean = gradle.startParameter.taskNames.any { task ->
+    val name = task.substringAfterLast(':')
+    name.contains("assembleRelease", ignoreCase = true) ||
+        name.contains("bundleRelease", ignoreCase = true) ||
+        name.equals("build", ignoreCase = true) ||
+        name.equals("assemble", ignoreCase = true)
+}
+
+if (releaseSigning == null && releaseTaskRequested && providers.gradleProperty("allowDebugSignRelease").orNull != "true") {
     throw GradleException(
         """
         找不到固定的发布密钥，已中止 release 构建。

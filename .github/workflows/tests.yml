@@ -25,9 +25,11 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
           log-accepted-android-sdk-licenses: false
-      - run: ./gradlew testDebugUnitTest assembleDebug assembleRelease --console=plain
+      # 不跑 assembleRelease：正式包的签名密钥只在本机（~/.android-keys）和服务器备份里，
+      # 按设计不进 CI。release 构建缺密钥会直接失败（见 docs/android-release-signing.md）。
+      - run: ./gradlew testDebugUnitTest assembleDebug --console=plain
         working-directory: android
       - uses: actions/upload-artifact@v4
         with:
-          name: GetVideo-apks
+          name: GetVideo-debug-apks
           path: android/app/build/outputs/apk/**/*.apk
