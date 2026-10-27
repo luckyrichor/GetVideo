@@ -34,9 +34,11 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun uiIsDark(): Boolean = MaterialTheme.colorScheme.surface.luminance() < 0.5f
 
+/** 页面底色：启用了自定义背景时让出这一层，让底图透上来。 */
 @Composable
 fun uiPageBackground(): Color =
-    if (uiIsDark()) Color(0xFF121016) else Color(0xFFF5F3FA)
+    if (LocalBackgroundEnabled.current) Color.Transparent
+    else if (uiIsDark()) Color(0xFF121016) else Color(0xFFF5F3FA)
 
 @Composable
 fun uiCardColor(): Color =
