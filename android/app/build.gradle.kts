@@ -1,3 +1,6 @@
+import java.io.File
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -5,9 +8,33 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
+// 固定发布证书：先找 ~/.android-keys/getvideo.properties，再找项目根的 keystore.properties。
+// 两者都没有（或密钥文件缺失）才回退到调试签名，保证换机器也能构建，但发布必须用固定证书。
+val releaseSigning: Properties? = sequenceOf(
+    File(System.getProperty("user.home"), ".android-keys/getvideo.properties"),
+    rootProject.file("keystore.properties"),
+).mapNotNull { file ->
+    file.takeIf { it.isFile }?.let { props -> Properties().apply { props.inputStream().use { load(it) } } }
+}.firstOrNull { props ->
+    props.getProperty("storeFile")?.let { File(it).isFile } == true
+}
+
 android {
     namespace = "com.getvideo.app"
     compileSdk = 34
+
+    signingConfigs {
+        if (releaseSigning != null) {
+            create("release") {
+                storeFile = File(releaseSigning.getProperty("storeFile"))
+                storePassword = releaseSigning.getProperty("storePassword")
+                keyAlias = releaseSigning.getProperty("keyAlias")
+                keyPassword = releaseSigning.getProperty("keyPassword")
+                enableV1Signing = true
+                enableV2Signing = true
+            }
+        }
+    }
 
     defaultConfig {
         applicationId = "com.getvideo.app"
@@ -33,7 +60,7 @@ android {
         }
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName(if (releaseSigning != null) "release" else "debug")
             if (previewBuild) {
                 applicationIdSuffix = ".preview"
                 manifestPlaceholders["appLabel"] = "GetVideo 新版"

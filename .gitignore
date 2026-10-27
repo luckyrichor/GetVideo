@@ -20,3 +20,8 @@ data/video/
 artifacts/
 
 data/recreation/
+android/keystore.properties
+
+# 签名密钥只放在 ~/.android-keys/ 并备份到服务器，绝不入库
+*.jks
+*.keystore
