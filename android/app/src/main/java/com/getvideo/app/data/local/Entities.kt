@@ -17,6 +17,8 @@ data class TrackEntity(
     val title: String,
     val uploader: String?,
     val durationSec: Double?,
+    /** 平台封面地址；仅手机直提取可得，云端同步的条目为空。 */
+    val coverUrl: String? = null,
     val audioBytes: Long?,
     val audioFormat: String,
     val sourceUrl: String,

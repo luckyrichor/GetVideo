@@ -1,22 +1,35 @@
 package com.getvideo.app.ui.screen
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.TimerOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.getvideo.app.player.PlayerHolder
 import com.getvideo.app.data.repo.PlaylistRepository
+import com.getvideo.app.ui.components.uiCardColor
+import com.getvideo.app.ui.components.uiHairline
+import com.getvideo.app.ui.components.uiMuted
+import com.getvideo.app.ui.formatDuration
 import kotlinx.coroutines.launch
 
 @Composable
@@ -63,33 +76,114 @@ fun QueueBar() {
     }
     if (showTimer) TimerDialog(onClose = { showTimer = false })
     if (showMode) PlaybackModeDialog(onClose = { showMode = false })
-    if (showQueue) AlertDialog(onDismissRequest = { showQueue = false }, title = { Column {
-        Text(listName)
-        Text("共 ${queue.size} 个文件", style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
-        if (timer != null) Row(verticalAlignment = Alignment.CenterVertically) {
-            AreaButton(onClick = { showTimer = true }, tone = ActionTone.TIMER) { Text("定时停止 $timer") }
-            AreaButton(onClick = { PlayerHolder.cancelTimer() }, tone = ActionTone.TIMER) { Text("取消定时") }
-        }
-    } },
-        text = { LazyColumn(Modifier.heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            itemsIndexed(queue) { i, item ->
-                val isCurrent = i == index
-                Row(Modifier.fillMaxWidth().regionFrame(isCurrent).padding(horizontal = 8.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("${i + 1}", modifier = Modifier.widthIn(min = 24.dp).padding(end = 8.dp),
-                        style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(item.track.title, modifier = Modifier.weight(1f), maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
-                    IconButton(onClick = { scope.launch {
-                        if (isCurrent) PlayerHolder.toggle(context) else PlayerHolder.jump(context, i)
-                    } }) {
-                        Icon(if (isCurrent && playing) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            if (isCurrent && playing) "暂停第${i + 1}个视频" else "播放第${i + 1}个视频",
-                            tint = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
-                    }
-                    AreaButton(onClick = { scope.launch { PlayerHolder.remove(context, i) } }, tone = ActionTone.DESTRUCTIVE) { Text("移除") }
+    if (showQueue) MusicSheet(
+        title = listName,
+        onDismiss = { showQueue = false },
+        subtitle = if (timer != null) "定时停止：$timer" else "点条目切换，右侧按钮移除",
+        badge = if (queue.size == 1) "1 个" else "${queue.size} 个",
+        scroll = false,
+        confirmText = "完成",
+        onConfirm = { showQueue = false },
+        header = if (timer != null) {
+            {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SheetPill("查看定时", Icons.Default.Timer, { showQueue = false; showTimer = true })
+                    SheetPill("取消定时", Icons.Default.TimerOff, { PlayerHolder.cancelTimer() })
                 }
             }
-        } }, confirmButton = { AreaButton(onClick = { showQueue = false }) { Text("关闭") } })
+        } else null,
+    ) {
+        LazyColumn(Modifier.heightIn(max = 430.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            itemsIndexed(queue) { i, item ->
+                val isCurrent = i == index
+                QueueRowV2(
+                    index = i,
+                    title = item.track.title,
+                    uploader = item.track.uploader,
+                    durationSec = item.track.durationSec,
+                    current = isCurrent,
+                    playing = isCurrent && playing,
+                    onPlay = { scope.launch { if (isCurrent) PlayerHolder.toggle(context) else PlayerHolder.jump(context, i) } },
+                    onRemove = { scope.launch { PlayerHolder.remove(context, i) } },
+                )
+            }
+        }
+    }
+}
+
+/** 队列行：序号 + 标题 + 圆形播放入口 + 移除，与音频版保持同一套视觉。 */
+@Composable
+private fun QueueRowV2(
+    index: Int,
+    title: String,
+    uploader: String?,
+    durationSec: Double?,
+    current: Boolean,
+    playing: Boolean,
+    onPlay: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = if (current) colors.primary.copy(alpha = 0.09f) else uiCardColor(),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (current) colors.primary.copy(alpha = 0.45f) else uiHairline(),
+        ),
+        tonalElevation = 0.dp,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            Modifier.padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier.size(24.dp).clip(CircleShape)
+                    .background(if (current) colors.primary else colors.surfaceVariant.copy(alpha = 0.7f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    "${index + 1}", fontSize = 11.sp,
+                    color = if (current) colors.onPrimary else colors.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    title, fontSize = 14.sp, lineHeight = 19.sp,
+                    fontWeight = if (current) FontWeight.Medium else FontWeight.Normal,
+                    color = if (current) colors.primary else colors.onSurface,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis,
+                )
+                val sub = listOfNotNull(
+                    uploader?.takeIf { it.isNotBlank() },
+                    durationSec?.takeIf { it > 0 }?.let { formatDuration(it) },
+                ).joinToString("  ·  ")
+                if (sub.isNotBlank()) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(sub, fontSize = 11.sp, color = uiMuted(), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            Box(
+                Modifier.size(36.dp).clip(CircleShape)
+                    .background(if (current) colors.primary else colors.surfaceVariant.copy(alpha = 0.55f))
+                    .clickable(onClick = onPlay),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    if (playing) "暂停第${index + 1}个视频" else "播放第${index + 1}个视频",
+                    Modifier.size(18.dp),
+                    tint = if (current) colors.onPrimary else colors.primary,
+                )
+            }
+            Box(
+                Modifier.size(32.dp).clip(CircleShape).clickable(onClick = onRemove),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Default.Close, "从列表移除：$title", Modifier.size(17.dp), tint = uiMuted())
+            }
+        }
+    }
 }

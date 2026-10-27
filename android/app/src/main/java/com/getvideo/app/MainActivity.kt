@@ -4,9 +4,17 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Link
@@ -54,6 +62,10 @@ class MainActivity : ComponentActivity() {
                     bottomBar = {
                         Column {
                             if (tab == Tab.LIBRARY) QueueBar()
+                            HorizontalDivider(
+                                thickness = 0.5.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+                            )
                             NavigationBar {
                             Tab.entries.forEach { t ->
                                 NavigationBarItem(
@@ -67,12 +79,30 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 ) { padding ->
-                    Surface(Modifier.fillMaxSize().padding(padding)) {
-                        when (tab) {
-                            Tab.LIBRARY -> LibraryScreenV2(openCategories)
-                            Tab.EXTRACT -> ExtractScreen(prefill = shared, onSharedConsumed = { shared = null })
-                            Tab.AI -> RecreationScreen()
-                            Tab.MY -> MyScreen()
+                    Surface(Modifier.fillMaxSize().padding(padding), color = Color.Transparent) {
+                        Box(Modifier.fillMaxSize()) {
+                            when (tab) {
+                                Tab.LIBRARY -> LibraryScreenV2(openCategories)
+                                Tab.EXTRACT -> ExtractScreen(prefill = shared, onSharedConsumed = { shared = null })
+                                Tab.AI -> RecreationScreen()
+                                Tab.MY -> MyScreen()
+                            }
+                            // 底部渐隐，避免内容被导航栏硬切；不接收点击，不影响任何按钮。
+                            Box(
+                                Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .fillMaxWidth()
+                                    .height(12.dp)
+                                    .background(
+                                        Brush.verticalGradient(
+                                            listOf(
+                                                MaterialTheme.colorScheme.surface.copy(alpha = 0f),
+                                                MaterialTheme.colorScheme.surface.copy(alpha = 0.55f),
+                                                MaterialTheme.colorScheme.surface,
+                                            )
+                                        )
+                                    )
+                            )
                         }
                     }
                 }

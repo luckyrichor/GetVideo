@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hmac
 import json
+import os
 import secrets
 from datetime import timedelta, timezone
 from io import BytesIO
@@ -18,7 +19,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .accounts import authenticated_user, current_user, db, limit_auth, new_session, token_hash
+from .accounts import authenticated_user, current_user, db, limit_auth, new_session, password_matches, token_hash
 from .config import settings
 from .crypto import credential_aad, decrypt, encrypt
 from .login.bilibili import BilibiliLogin
@@ -248,8 +249,20 @@ def complete(body: ProofBody, x_getvideo_session: str | None = Header(None), ses
     return {"bound": True, "platform": row.platform, "nickname": row.nickname, "session": result}
 
 
+class UnbindBody(BaseModel):
+    """解绑二次确认：带上当前账号密码，避免拿到已登录设备就能解绑。"""
+    password: SecretStr | None = None
+
+
 @router.post("/platform-bindings/{platform}/unbind", dependencies=[Depends(limit_auth)])
-def unbind(platform: Literal["bilibili", "douyin"], user: AppUser = Depends(current_user), session: Session = Depends(db)):
+def unbind(platform: Literal["bilibili", "douyin"], body: UnbindBody | None = None,
+           user: AppUser = Depends(current_user), session: Session = Depends(db)):
+    # 传了密码就校验；没传时按 GETVIDEO_STRICT_UNBIND 决定是否拒绝，保证旧客户端不被直接打断。
+    if body is not None and body.password is not None:
+        if not password_matches(body.password.get_secret_value(), user.password_hash):
+            raise HTTPException(403, "密码不正确，未解除绑定")
+    elif os.getenv("GETVIDEO_STRICT_UNBIND") == "1":
+        raise HTTPException(400, "解除绑定需要输入当前账号密码")
     session.execute(delete(Binding).where(Binding.user_id == user.id, Binding.platform == platform))
     session.execute(update(Attempt).where(Attempt.user_id == user.id, Attempt.platform == platform).values(status="failed", key_blob=None, cookie_blob=None))
     session.commit()

@@ -9,6 +9,18 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.activity.compose.BackHandler
 import com.getvideo.app.data.repo.DiagnosticsStore
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import com.getvideo.app.ui.formatDuration
+import com.getvideo.app.ui.platformLabel
+import com.getvideo.app.ui.components.uiAccentContainer
+import com.getvideo.app.ui.components.uiCardColor
+import com.getvideo.app.ui.components.uiHairline
+import com.getvideo.app.ui.components.uiMuted
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -28,7 +40,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -157,12 +172,13 @@ fun LibraryScreenV2(openCategories: Boolean = false) {
     Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
-                .height(48.dp).regionFrame(), verticalAlignment = Alignment.CenterVertically) {
+                .height(44.dp).clip(RoundedCornerShape(14.dp)).background(uiAccentContainer()).padding(4.dp),
+                verticalAlignment = Alignment.CenterVertically) {
                 listOf("全部视频", "类别").forEachIndexed { index, label ->
-                    if (index > 0) VerticalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f))
                     val selected = section == index
                     Box(Modifier.weight(1f).fillMaxHeight()
-                        .background(if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface)
+                        .clip(RoundedCornerShape(11.dp))
+                        .background(if (selected) uiCardColor() else Color.Transparent)
                         .selectable(selected = selected, role = Role.Tab, onClick = {
                             if (deleting) return@selectable
                             exitSelection()
@@ -170,8 +186,8 @@ fun LibraryScreenV2(openCategories: Boolean = false) {
                             if (index == 1) categoryId = null
                         }), contentAlignment = Alignment.Center) {
                         Text(label, style = MaterialTheme.typography.titleSmall,
-                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                            color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -187,19 +203,57 @@ fun LibraryScreenV2(openCategories: Boolean = false) {
                 }
             }
             if (section == 0) {
-                Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(query, { query = it }, label = { Text("搜索视频名称") }, singleLine = true, modifier = Modifier.weight(1f))
-                    AreaButton(onClick = { dateDialog = true }, modifier = Modifier.padding(top = 8.dp).height(56.dp)) { Text("日期", style = MaterialTheme.typography.bodyLarge) }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        query, { query = it },
+                        placeholder = { Text("搜索视频名称", style = MaterialTheme.typography.bodyMedium) },
+                        leadingIcon = { Icon(Icons.Default.Search, null, Modifier.size(18.dp), tint = uiMuted()) },
+                        singleLine = true,
+                        shape = RoundedCornerShape(14.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
+                            unfocusedBorderColor = Color.Transparent,
+                            focusedContainerColor = uiCardColor(),
+                            unfocusedContainerColor = uiAccentContainer(),
+                        ),
+                        modifier = Modifier.weight(1f),
+                    )
+                    Row(
+                        Modifier
+                            .height(56.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(if (startMs != null || endTimeMs != null) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else uiAccentContainer())
+                            .clickable { dateDialog = true }
+                            .padding(horizontal = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Default.DateRange, null, Modifier.size(17.dp),
+                            tint = if (startMs != null || endTimeMs != null) MaterialTheme.colorScheme.primary else uiMuted(),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "日期",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (startMs != null || endTimeMs != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
                 }
-                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 0.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (serverUrl.isNotBlank()) AreaButton(onClick = { scope.launch {
-                        if (com.getvideo.app.data.repo.AccountStore.forServer(serverUrl) == null) { accountDialog = true; return@launch }
-                        syncing = true
-                        runCatching { DiagnosticsStore.operation("云端同步") { trackRepo.sync() } }.onSuccess { notice = "已同步 $it 条" }
-                            .onFailure { notice = ApiProvider.humanMessage(it) }
-                        syncing = false
-                    } }, enabled = !syncing, tone = ActionTone.SYNC) { Text(if (syncing) "同步中…" else "云端同步") }
+                    if (serverUrl.isNotBlank()) AssistChip(
+                        onClick = { scope.launch {
+                            if (com.getvideo.app.data.repo.AccountStore.forServer(serverUrl) == null) { accountDialog = true; return@launch }
+                            syncing = true
+                            runCatching { DiagnosticsStore.operation("云端同步") { trackRepo.sync() } }.onSuccess { notice = "已同步 $it 条" }
+                                .onFailure { notice = ApiProvider.humanMessage(it) }
+                            syncing = false
+                        } },
+                        enabled = !syncing,
+                        label = { Text(if (syncing) "同步中…" else "云端同步", style = MaterialTheme.typography.labelLarge) },
+                        leadingIcon = { Icon(Icons.Default.CloudSync, null, Modifier.size(16.dp)) },
+                        shape = RoundedCornerShape(12.dp),
+                    )
                     if (timer != null) {
                         Text(if (timer.contains(":")) "剩余 $timer" else timer,
                             modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelLarge,
@@ -212,8 +266,8 @@ fun LibraryScreenV2(openCategories: Boolean = false) {
                 if (startMs != null || endTimeMs != null) {
                     AreaButton(onClick = { startMs = null; endTimeMs = null }) { Text("${startMs?.let { displayDateTime(it) } ?: "不限"} ~ ${endTimeMs?.let { displayDateTime(it) } ?: "不限"} ×") }
                 }
-                if (allTracks.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("暂无视频") }
-                else LazyColumn { items(allTracks, key = { it.id }) { track ->
+                if (allTracks.isEmpty()) EmptyLibrary()
+                else LazyColumn(contentPadding = PaddingValues(bottom = 12.dp)) { items(allTracks, key = { it.id }) { track ->
                     LibraryAudioRow(track, onPlay = { queueItems(listOf(track), true) }, onMore = { target = LibraryTarget.Audio(track) },
                         selecting = selecting, selected = track.id in batchIds, selectionEnabled = !deleting,
                         onSelect = { selectTrack(track.id) })
@@ -221,42 +275,64 @@ fun LibraryScreenV2(openCategories: Boolean = false) {
             } else {
                 val parent = allCategories.firstOrNull { it.id == categoryId }
                 if (parent != null) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        AreaButton(onClick = { exitSelection(); categoryId = parent.parentId }) { Text("‹ 返回") }
-                        Text(categoryPath(parent, allCategories), modifier = Modifier.weight(1f).padding(start = 20.dp, end = 16.dp),
-                            maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
+                    Row(
+                        Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        SheetPill("返回", Icons.Default.ChevronLeft, { exitSelection(); categoryId = parent.parentId })
+                        Text(
+                            categoryPath(parent, allCategories),
+                            modifier = Modifier.weight(1f).padding(start = 12.dp, end = 8.dp),
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                        )
                     }
                 } else if (frequent.any { it.accessCount > 0 }) {
-                    Text("常用类别", Modifier.padding(16.dp, 8.dp), style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "常用类别",
+                        Modifier.padding(start = 18.dp, top = 12.dp, bottom = 6.dp),
+                        fontSize = 12.sp, fontWeight = FontWeight.Medium, color = uiMuted(),
+                    )
                     Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp)) {
                         frequent.filter { it.accessCount > 0 }.forEach { cat ->
                             AssistChip(onClick = { exitSelection(); categoryId = cat.id; operate { categoryRepo.recordAccess(cat.id) } },
-                                label = { Text(cat.name) }, modifier = Modifier.padding(end = 8.dp))
+                                label = { Text(cat.name) }, shape = CircleShape, modifier = Modifier.padding(end = 8.dp))
                         }
                     }
                 }
                 val children = allCategories.filter { it.parentId == categoryId }
-                if (categoryId == null) {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                        AreaButton(onClick = { dialog = "newCategory"; editText = ""; selectedParent = null }, tone = ActionTone.CONFIRM) { Text("＋ 新建类别") }
-                        AreaButton(onClick = { dialog = "playlists" }) { Text("播放列表") }
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (categoryId == null) {
+                        SheetPill("新建类别", Icons.Default.Add, { dialog = "newCategory"; editText = ""; selectedParent = null }, primary = true)
+                        Spacer(Modifier.weight(1f))
+                        SheetPill("播放列表", Icons.AutoMirrored.Filled.QueueMusic, { dialog = "playlists" })
+                    } else {
+                        if (parent?.kind != "LEAF") {
+                            SheetPill("新建子类别", Icons.Default.Add, { dialog = "newCategory"; editText = ""; selectedParent = categoryId }, primary = true)
+                        }
+                        Spacer(Modifier.weight(1f))
                     }
-                } else if (parent?.kind != "LEAF") {
-                    AreaButton(onClick = { dialog = "newCategory"; editText = ""; selectedParent = categoryId }, tone = ActionTone.CONFIRM) { Text("＋ 新建子类别") }
                 }
-                if (children.isEmpty() && categoryTracks.isEmpty()) Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { Text("这里还没有内容") }
-                LazyColumn {
+                if (children.isEmpty() && categoryTracks.isEmpty()) EmptyCategory()
+                LazyColumn(contentPadding = PaddingValues(bottom = 12.dp)) {
                     items(children, key = { "c${it.id}" }) { cat ->
-                        val count = if (cat.kind == "CONTAINER") allCategories.count { it.parentId == cat.id }
-                            else libraryTracks.count { it.localCategoryId == cat.id }
-                        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp).regionFrame().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Folder, null)
-                            Column(Modifier.weight(1f).clickable { exitSelection(); categoryId = cat.id; operate { categoryRepo.recordAccess(cat.id) } }.padding(12.dp)) {
-                                Text(cat.name)
-                                Text(if (cat.kind == "CONTAINER") "$count 个类别" else "$count 首视频", style = MaterialTheme.typography.bodySmall)
-                            }
-                            IconButton(onClick = { targetTracks(LibraryTarget.Category(cat)) }) { Icon(Icons.Default.PlayArrow, "播放类别") }
-                            IconButton(onClick = { target = LibraryTarget.Category(cat) }) { Icon(Icons.Default.MoreVert, "更多") }
+                        val subCount = allCategories.count { it.parentId == cat.id }
+                        val container = subCount > 0 || cat.kind == "CONTAINER"
+                        val count = if (container) subCount else libraryTracks.count { it.localCategoryId == cat.id }
+                        Box(Modifier.padding(horizontal = 12.dp, vertical = 5.dp)) {
+                            CategoryCard(
+                                name = cat.name,
+                                countText = if (container) "$count 个类别" else "$count 个视频",
+                                icon = if (container) Icons.Default.Folder else Icons.Default.FolderOpen,
+                                container = container,
+                                onOpen = { exitSelection(); categoryId = cat.id; operate { categoryRepo.recordAccess(cat.id) } },
+                                onPlay = { targetTracks(LibraryTarget.Category(cat)) },
+                                onMore = { target = LibraryTarget.Category(cat) },
+                            )
                         }
                     }
                     items(categoryTracks, key = { "t${it.id}" }) { track ->
@@ -296,33 +372,70 @@ fun LibraryScreenV2(openCategories: Boolean = false) {
     })
 
     if (dialog == null) target?.let { item ->
-        AlertDialog(onDismissRequest = { target = null }, containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp,
-            title = { Text(if (item is LibraryTarget.Audio) item.track.title else (item as LibraryTarget.Category).category.name,
-                fontSize = 18.sp, lineHeight = 25.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-            text = { Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                MusicMenuAction("加入当前播放列表", Icons.AutoMirrored.Filled.PlaylistAdd, featured = true, status = currentListName, onClick = {
+        val audio = item as? LibraryTarget.Audio
+        val category = (item as? LibraryTarget.Category)?.category
+        MusicSheet(
+            title = audio?.track?.title ?: category?.name.orEmpty(),
+            onDismiss = { target = null },
+            subtitle = audio?.let {
+                listOfNotNull(
+                    it.track.uploader?.takeIf { u -> u.isNotBlank() },
+                    it.track.durationSec?.takeIf { s -> s > 0 }?.let { s -> formatDuration(s) },
+                    platformLabel(it.track.platform),
+                ).joinToString("  ·  ")
+            } ?: category?.let { if (it.kind == "CONTAINER") "包含子类别的分类" else "分类下的视频" },
+            confirmText = "完成",
+            onConfirm = { target = null },
+        ) {
+            SheetGroup("播放") {
+                SheetRow("加入当前播放列表", Icons.AutoMirrored.Filled.PlaylistAdd, featured = true, status = currentListName, onClick = {
                     target = null
                     operate { val tracks = if (item is LibraryTarget.Audio) listOf(item.track) else categoryRepo.recursiveTracks((item as LibraryTarget.Category).category.id); queueItems(tracks, false) }
                 })
-                MusicMenuAction("加入其他播放列表", Icons.AutoMirrored.Filled.QueueMusic, onClick = { dialog = "addToPlaylist" })
-                MusicMenuAction("播放列表", Icons.Default.LibraryMusic, onClick = { target = null; dialog = "playlists" })
-                MusicMenuAction("播放方式", Icons.Default.Repeat, status = mode.label, onClick = { target = null; dialog = "mode" })
-                MusicMenuAction("定时播放", Icons.Default.Timer, status = timer ?: "未设置", onClick = { target = null; dialog = "timer" })
-                if (timer != null) MusicMenuAction("取消定时播放", Icons.Default.TimerOff, onClick = { PlayerHolder.cancelTimer(); target = null; notice = "已取消定时播放" })
-                HorizontalDivider(Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
-                if (item !is LibraryTarget.Category || item.category.id != 1L) {
-                    MusicMenuAction("重命名", Icons.Default.Edit, onClick = { editText = if (item is LibraryTarget.Audio) item.track.title else (item as LibraryTarget.Category).category.name; dialog = "rename" })
-                    MusicMenuAction("移动到…", Icons.AutoMirrored.Filled.DriveFileMove, onClick = { selectedParent = null; dialog = "move" })
-                    MusicMenuAction("删除", Icons.Default.DeleteOutline, destructive = true, onClick = { dialog = "delete" })
+                SheetDivider()
+                SheetRow("加入其他播放列表", Icons.AutoMirrored.Filled.QueueMusic, onClick = { dialog = "addToPlaylist" })
+                SheetDivider()
+                SheetRow("播放列表", Icons.Default.LibraryMusic, onClick = { target = null; dialog = "playlists" })
+                SheetDivider()
+                SheetRow("播放方式", Icons.Default.Repeat, status = mode.label, onClick = { target = null; dialog = "mode" })
+                SheetDivider()
+                SheetRow("定时播放", Icons.Default.Timer, status = timer ?: "未设置", onClick = { target = null; dialog = "timer" })
+                if (timer != null) {
+                    SheetDivider()
+                    SheetRow("取消定时播放", Icons.Default.TimerOff, onClick = { PlayerHolder.cancelTimer(); target = null; notice = "已取消定时播放" })
                 }
-                if (item is LibraryTarget.Audio) {
-                    MusicMenuAction("AI 描述与生成", Icons.Default.AutoAwesome, onClick = { recreationTrack = item.track; target = null })
-                    MusicMenuAction("剪辑视频", Icons.Default.ContentCut, status = if (item.track.locallyEdited) "本地剪辑版" else null, onClick = { editTrack = item.track; target = null })
-                    if (item.track.locallyEdited && item.track.id > 0) MusicMenuAction("恢复服务器原版", Icons.Default.Restore, onClick = { restoreTrack = item.track; target = null })
+            }
+            if (item !is LibraryTarget.Category || item.category.id != 1L) {
+                SheetGroup("整理") {
+                    SheetRow("重命名", Icons.Default.Edit, onClick = { editText = if (item is LibraryTarget.Audio) item.track.title else (item as LibraryTarget.Category).category.name; dialog = "rename" })
+                    SheetDivider()
+                    SheetRow("移动到…", Icons.AutoMirrored.Filled.DriveFileMove, onClick = { selectedParent = null; dialog = "move" })
                 }
-                if (item is LibraryTarget.Audio) MusicMenuAction("导出", Icons.Default.IosShare, onClick = { exportTrack = item.track; target = null; exportLauncher.launch("${item.track.title.take(60)}.${item.track.audioFormat}") })
-                if (item is LibraryTarget.Category && item.category.kind != "LEAF") MusicMenuAction("新建子类别", Icons.Default.CreateNewFolder, onClick = { selectedParent = item.category.id; editText = ""; target = null; dialog = "newCategory" })
-            } }, confirmButton = { AreaButton(onClick = { target = null }) { Text("关闭") } })
+            }
+            if (item is LibraryTarget.Category && item.category.kind != "LEAF") {
+                SheetGroup("分类") {
+                    SheetRow("新建子类别", Icons.Default.CreateNewFolder, onClick = { selectedParent = item.category.id; editText = ""; target = null; dialog = "newCategory" })
+                }
+            }
+            if (item is LibraryTarget.Audio) {
+                SheetGroup("视频") {
+                    SheetRow("AI 描述与生成", Icons.Default.AutoAwesome, onClick = { recreationTrack = item.track; target = null })
+                    SheetDivider()
+                    SheetRow("剪辑视频", Icons.Default.ContentCut, status = if (item.track.locallyEdited) "本地剪辑版" else null, onClick = { editTrack = item.track; target = null })
+                    if (item.track.locallyEdited && item.track.id > 0) {
+                        SheetDivider()
+                        SheetRow("恢复服务器原版", Icons.Default.Restore, onClick = { restoreTrack = item.track; target = null })
+                    }
+                    SheetDivider()
+                    SheetRow("导出", Icons.Default.IosShare, onClick = { exportTrack = item.track; target = null; exportLauncher.launch("${item.track.title.take(60)}.${item.track.audioFormat}") })
+                }
+            }
+            if (item !is LibraryTarget.Category || item.category.id != 1L) {
+                SheetGroup {
+                    SheetRow("删除", Icons.Default.DeleteOutline, destructive = true, chevron = false, onClick = { dialog = "delete" })
+                }
+            }
+        }
     }
     when (dialog) {
         "newCategory", "rename", "newPlaylist", "renamePlaylist" -> AlertDialog(onDismissRequest = { dialog = null }, title = { Text(when (dialog) { "newCategory" -> "新建类别"; "newPlaylist" -> "新建播放列表"; else -> "重命名" }) },
@@ -467,6 +580,62 @@ private fun categoryPath(category: CategoryEntity, all: List<CategoryEntity>): S
     return names.asReversed().joinToString(" / ")
 }
 
+/** 类别页空态：说明两类可行动作，避免只有一个「这里还没有内容」。 */
+@Composable
+private fun EmptyCategory() {
+    Column(
+        Modifier.fillMaxWidth().padding(vertical = 56.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(
+            Modifier.size(68.dp).clip(RoundedCornerShape(22.dp)).background(uiAccentContainer()),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Default.FolderOpen, null, Modifier.size(30.dp), tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.72f))
+        }
+        Text("这里还是空的", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+        Text(
+            "新建类别给视频分组，比如「睡前」「通勤」\n也可以长按视频，用「移动到…」放进来",
+            style = MaterialTheme.typography.bodySmall,
+            color = uiMuted(),
+            textAlign = TextAlign.Center,
+            lineHeight = 19.sp,
+        )
+    }
+}
+
+/** 空库引导：给出下一步动作，而不是只丢一句「暂无视频」。 */
+@Composable
+private fun EmptyLibrary() {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Box(
+                Modifier.size(76.dp).clip(RoundedCornerShape(24.dp)).background(uiAccentContainer()),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Default.GraphicEq,
+                    null,
+                    Modifier.size(34.dp),
+                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
+                )
+            }
+            Text("还没有视频", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+            Text(
+                "去「提取」页粘贴 B 站或抖音链接\n就能把视频保存到这里",
+                style = MaterialTheme.typography.bodySmall,
+                color = uiMuted(),
+                textAlign = TextAlign.Center,
+                lineHeight = 19.sp,
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun LibraryAudioRow(track: TrackEntity, onPlay: () -> Unit, onMore: () -> Unit,
@@ -477,22 +646,147 @@ private fun LibraryAudioRow(track: TrackEntity, onPlay: () -> Unit, onMore: () -
     val index by PlayerHolder.currentIndex.collectAsState()
     val playing by PlayerHolder.isPlaying.collectAsState()
     val isCurrent = queue.getOrNull(index)?.track?.id == track.id
-    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp).regionFrame(if (selecting) selected else isCurrent)
-        .combinedClickable(enabled = selectionEnabled, onClick = { if (selecting) onSelect() }, onLongClick = onSelect,
-            onLongClickLabel = "选择视频")
-        .padding(end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (selecting) Checkbox(checked = selected, enabled = selectionEnabled, onCheckedChange = { onSelect() })
-        Column(Modifier.weight(1f).padding(8.dp)) {
-            Text(track.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(track.uploader ?: track.platform, style = MaterialTheme.typography.bodySmall)
-            Text(if (track.addedAtMs > 0) displayDateTime(track.addedAtMs, seconds = true) else "时间未记录",
-                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val highlighted = if (selecting) selected else isCurrent
+    val shape = RoundedCornerShape(16.dp)
+
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 3.dp)
+            .clip(shape)
+            .background(if (highlighted) uiAccentContainer() else uiCardColor())
+            .border(
+                1.dp,
+                if (highlighted) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f) else uiHairline(),
+                shape,
+            )
+            .combinedClickable(
+                enabled = selectionEnabled,
+                onClick = { if (selecting) onSelect() },
+                onLongClick = onSelect,
+                onLongClickLabel = "选择视频",
+            )
+            .padding(start = if (selecting) 8.dp else 10.dp, end = 6.dp, top = 9.dp, bottom = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (selecting) {
+            Checkbox(checked = selected, enabled = selectionEnabled, onCheckedChange = { onSelect() })
+            Spacer(Modifier.width(4.dp))
         }
-        if (!selecting) IconButton(onClick = { if (isCurrent) scope.launch { PlayerHolder.toggle(context) } else onPlay() }) {
-            Icon(if (isCurrent && playing) Icons.Default.Pause else Icons.Default.PlayArrow, if (isCurrent && playing) "暂停视频" else "播放视频", tint = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+        TrackCover(track)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                track.title,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyLarge,
+                lineHeight = 20.sp,
+                fontWeight = FontWeight.Medium,
+                color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(Modifier.height(3.dp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                val uploader = track.uploader?.takeIf { it.isNotBlank() }
+                if (uploader != null) {
+                    Text(
+                        uploader,
+                        Modifier.weight(1f, fill = false),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = uiMuted(),
+                    )
+                    Text("  ·  ", style = MaterialTheme.typography.bodySmall, color = uiMuted())
+                }
+                val tail = buildList {
+                    track.durationSec?.takeIf { it > 0 }?.let { add(formatDuration(it)) }
+                    add(if (track.addedAtMs > 0) shortAddedTime(track.addedAtMs) else "时间未记录")
+                    if (track.locallyEdited) add("已剪辑")
+                }.joinToString("  ·  ")
+                Text(
+                    tail,
+                    maxLines = 1,
+                    softWrap = false,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = uiMuted(),
+                )
+            }
         }
-        if (!selecting) IconButton(onClick = onMore) { Icon(Icons.Default.MoreVert, "更多") }
+        Box(
+            Modifier
+                .size(38.dp)
+                .clip(CircleShape)
+                .background(if (isCurrent) MaterialTheme.colorScheme.primary else uiAccentContainer())
+                .clickable(enabled = !selecting) {
+                    if (isCurrent) scope.launch { PlayerHolder.toggle(context) } else onPlay()
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                if (isCurrent && playing) Icons.Default.Pause else Icons.Default.PlayArrow,
+                if (isCurrent && playing) "暂停视频" else "播放视频",
+                Modifier.size(21.dp),
+                tint = if (isCurrent) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
+            )
+        }
+        if (!selecting) {
+            Box(
+                Modifier.size(34.dp).clip(CircleShape).clickable(onClick = onMore),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Default.MoreVert,
+                    "更多",
+                    Modifier.size(19.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                )
+            }
+        }
     }
+}
+
+/** 平台底色的封面占位：B站粉、抖音深灰，右侧用波形图标表示视频。 */
+@Composable
+private fun TrackCover(track: TrackEntity) {
+    val isBili = track.platform.equals("bilibili", ignoreCase = true)
+    val start = if (isBili) Color(0xFFFB7299) else Color(0xFF28262F)
+    val end = if (isBili) Color(0xFFFFA9C2) else Color(0xFF4C4857)
+    Box(
+        Modifier
+            .size(width = 68.dp, height = 48.dp)
+            .clip(RoundedCornerShape(11.dp))
+            .background(Brush.linearGradient(listOf(start, end))),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (!track.coverUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = track.coverUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Icon(
+                Icons.Default.Movie,
+                null,
+                Modifier.size(22.dp),
+                tint = Color.White.copy(alpha = 0.92f),
+            )
+        }
+    }
+}
+
+/** 入库时间：当天显示「今天 hh:mm」，其余显示「MM-dd hh:mm」。 */
+private fun shortAddedTime(ms: Long): String {
+    if (ms <= 0) return "时间未记录"
+    val then = java.util.Calendar.getInstance().apply { timeInMillis = ms }
+    val now = java.util.Calendar.getInstance()
+    val hhmm = String.format("%02d:%02d", then.get(java.util.Calendar.HOUR_OF_DAY), then.get(java.util.Calendar.MINUTE))
+    val sameDay = then.get(java.util.Calendar.YEAR) == now.get(java.util.Calendar.YEAR) &&
+        then.get(java.util.Calendar.DAY_OF_YEAR) == now.get(java.util.Calendar.DAY_OF_YEAR)
+    return if (sameDay) "今天 $hhmm"
+    else String.format("%02d-%02d %s", then.get(java.util.Calendar.MONTH) + 1, then.get(java.util.Calendar.DAY_OF_MONTH), hhmm)
 }
 
 @Composable

@@ -3,14 +3,25 @@ package com.getvideo.app.ui.screen
 import android.content.ClipboardManager
 import android.content.Context
 import android.os.SystemClock
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -21,6 +32,9 @@ import com.getvideo.app.data.repo.TrackRepository
 import com.getvideo.app.data.repo.DiagnosticsStore
 import com.getvideo.app.data.repo.PendingNotice
 import com.getvideo.app.ui.formatDuration
+import com.getvideo.app.ui.components.uiAccentContainer
+import com.getvideo.app.ui.components.uiCardColor
+import com.getvideo.app.ui.components.uiMuted
 import kotlinx.coroutines.launch
 
 class ExtractViewModel(private val repo: TrackRepository, private val version: String) : ViewModel() {
@@ -148,31 +162,62 @@ fun ExtractScreen(prefill: String? = null, onSharedConsumed: () -> Unit = {}) {
     }
 
     Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("提取视频", style = MaterialTheme.typography.headlineSmall)
-            Text("粘贴视频链接或完整分享文本，保存你想听的声音。", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("粘贴视频链接或完整分享文本，自动识别 B站、抖音。", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             OutlinedTextField(
                 value = vm.input, onValueChange = { vm.input = it }, enabled = !vm.busy,
-                label = { Text("分享文本或链接") },
-                placeholder = { Text("在这里粘贴抖音、哔哩哔哩的分享内容") },
-                minLines = 5, maxLines = 8, modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.large,
+                placeholder = { Text("粘贴分享文本或链接", style = MaterialTheme.typography.bodyMedium) },
+                minLines = 4, maxLines = 8, modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
+                    unfocusedBorderColor = Color.Transparent,
+                    focusedContainerColor = uiCardColor(),
+                    unfocusedContainerColor = uiAccentContainer(),
+                ),
             )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                AreaButton(onClick = { vm.pasteFromClipboard(context) }, enabled = !vm.busy, tone = ActionTone.SYNC) { Text("粘贴剪贴板") }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                AreaButton(onClick = { vm.pasteFromClipboard(context) }, enabled = !vm.busy, tone = ActionTone.SYNC) {
+                    Icon(Icons.Default.ContentPaste, null, Modifier.size(15.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("粘贴剪贴板")
+                }
                 AreaButton(onClick = { vm.input = "" }, enabled = !vm.busy && vm.input.isNotBlank()) { Text("清空") }
             }
-            Button(onClick = { vm.submit() }, enabled = !vm.busy && vm.input.isNotBlank(), modifier = Modifier.fillMaxWidth().height(52.dp), shape = MaterialTheme.shapes.large) {
-                Text(if (vm.busy && !vm.usingServer) "正在提取…" else "提取视频")
+            Spacer(Modifier.height(2.dp))
+            Button(
+                onClick = { vm.submit() },
+                enabled = !vm.busy && vm.input.isNotBlank(),
+                modifier = Modifier.fillMaxWidth().height(54.dp),
+                shape = RoundedCornerShape(16.dp),
+            ) {
+                Icon(Icons.Default.GraphicEq, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(if (vm.busy && !vm.usingServer) "正在提取…" else "提取视频", style = MaterialTheme.typography.titleSmall)
             }
-            OutlinedButton(onClick = { if (com.getvideo.app.data.repo.AccountStore.forServer(server) == null) accountDialog = true else vm.submitViaServer() }, enabled = !vm.busy && vm.input.isNotBlank(), modifier = Modifier.fillMaxWidth().height(48.dp), shape = MaterialTheme.shapes.large) {
-                Text(if (vm.busy && vm.usingServer) "服务器提取中…" else "从服务器提取")
+            OutlinedButton(
+                onClick = { if (com.getvideo.app.data.repo.AccountStore.forServer(server) == null) accountDialog = true else vm.submitViaServer() },
+                enabled = !vm.busy && vm.input.isNotBlank(),
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape = RoundedCornerShape(16.dp),
+            ) {
+                Icon(Icons.Default.CloudDownload, null, Modifier.size(17.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(if (vm.busy && vm.usingServer) "服务器提取中…" else "从服务器提取", style = MaterialTheme.typography.bodyMedium)
             }
+            Text(
+                "默认用手机直连解析。若某个视频解析失败，可改用服务器提取。",
+                style = MaterialTheme.typography.bodySmall,
+                color = uiMuted(),
+                lineHeight = 18.sp,
+            )
             if (vm.busy) {
-                LinearProgressIndicator(Modifier.fillMaxWidth())
-                Text(if (vm.usingServer) "服务器正在提取并下载到手机" else "手机正在解析并下载视频", style = MaterialTheme.typography.bodySmall)
+                LinearProgressIndicator(Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)))
+                Text(if (vm.usingServer) "服务器正在提取并下载到手机" else "手机正在解析并下载视频", style = MaterialTheme.typography.bodySmall, color = uiMuted())
             }
             ExtractionDiagnostics()
         }
     }
 }
+

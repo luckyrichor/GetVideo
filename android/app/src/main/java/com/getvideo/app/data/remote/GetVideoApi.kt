@@ -30,7 +30,7 @@ interface GetVideoApi {
     @POST("account/platform-auth/image") suspend fun platformAuthImage(@Body body: PlatformAuthProof): okhttp3.ResponseBody
     @POST("account/platform-auth/cancel") suspend fun platformAuthCancel(@Body body: PlatformAuthProof): Map<String, Boolean>
     @POST("account/platform-auth/complete") suspend fun platformAuthComplete(@Body body: PlatformAuthProof): PlatformAuthCompletion
-    @POST("account/platform-bindings/{platform}/unbind") suspend fun platformAccountUnbind(@Path("platform") platform: String): Map<String, Boolean>
+    @POST("account/platform-bindings/{platform}/unbind") suspend fun platformAccountUnbind(@Path("platform") platform: String, @Body body: Map<String, String>): Map<String, Boolean>
 
     @POST("v2/migration/claim") suspend fun claimMigration(@Body body: MigrationClaim): MigrationResult
     @POST("account/register") suspend fun accountRegister(@Body body: AccountCredentials): AccountSession
