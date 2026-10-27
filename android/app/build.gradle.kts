@@ -20,16 +20,24 @@ android {
 
     }
 
+    // 预览版可与正式版并存：包名加 .preview，桌面名称带「新版」，方便在保留旧数据的前提下试新版本
+    val previewBuild = providers.gradleProperty("getvideoPreview").orNull == "true"
+
     buildTypes {
         debug {
             isMinifyEnabled = false
-            if (providers.gradleProperty("getvideoPreview").orNull == "true") {
+            if (previewBuild) {
                 applicationIdSuffix = ".preview"
+                manifestPlaceholders["appLabel"] = "GetVideo 新版"
             }
         }
         release {
             isMinifyEnabled = false
             signingConfig = signingConfigs.getByName("debug")
+            if (previewBuild) {
+                applicationIdSuffix = ".preview"
+                manifestPlaceholders["appLabel"] = "GetVideo 新版"
+            }
         }
     }
 
