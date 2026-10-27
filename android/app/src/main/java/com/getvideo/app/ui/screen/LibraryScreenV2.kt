@@ -270,13 +270,14 @@ fun LibraryScreenV2(openCategories: Boolean = false) {
                     )
                     if (timer != null) {
                         Text(if (timer.contains(":")) "剩余 $timer" else timer,
-                            modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelLarge,
+                            style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.primary)
                         AreaButton(onClick = { PlayerHolder.cancelTimer(); notice = "已取消定时播放" }, tone = ActionTone.TIMER) {
                             Text("取消定时播放")
                         }
                     }
-                    // 导入本地视频：把系统文件选择器里选中的视频复制进库。
+                    Spacer(Modifier.weight(1f))
+                    // 导入本地视频：把系统文件选择器里选中的视频复制进库。靠右放，和「云端同步」分居两端。
                     AssistChip(
                         onClick = { importLauncher.launch(arrayOf("video/*")) },
                         enabled = !importing,

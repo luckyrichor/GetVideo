@@ -28,7 +28,34 @@ Android 用"签名证书"认定应用归属。包名相同、证书不同 → �
 
 1. `~/.android-keys/getvideo.properties`（首选）
 2. 项目根 `keystore.properties`（可选，适合 CI 注入）
-3. 都没有 → 回退到调试签名（只保证能编，**不能用于发布**）
+3. 都没有 → **直接构建失败**（不再悄悄回退调试证书）
+
+第 3 条是刻意设计的：以前"找不到就退回调试签名"，结果产出一个能编、能装、但证书不同的
+APK，装到手机上才发现撞墙。现在宁可编译报错，也不让不同签名的包流出去。
+确实只是本机临时调试、不发布时，才加 `-PallowDebugSignRelease=true` 绕过。
+
+报错长这样：
+
+```
+找不到固定的发布密钥，已中止 release 构建。
+请把项目密钥安装到本机后再构建： ./scripts/setup-release-key.sh
+```
+
+## 新环境怎么开工（换电脑 / 换 Agent / CI）
+
+密钥不在仓库里，所以**任何新环境第一次构建前都要先装密钥**：
+
+```bash
+scripts/setup-release-key.sh          # 从 tx:~/.app-keys/ 拉取，自动 chmod 600 并校验指纹
+scripts/setup-release-key.sh ~/bak    # 或者从本地备份目录拷贝
+```
+
+脚本会打印 keystore 的 SHA-256，和本文档上表核对一眼即可。装过一次就一直在，
+后续 `./gradlew assembleRelease` 直接可用。
+
+> 注意：让 Agent（不论跑在 Mac 还是服务器）改功能都没问题——**只要它在这台机器上构建**，
+> 用的就是 `~/.android-keys/` 里这把证书。真正需要额外一步的只有"在一台全新机器上构建"，
+> 那种情况先跑上面的脚本。
 
 properties 格式：
 

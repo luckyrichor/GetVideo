@@ -9,7 +9,11 @@ plugins {
 }
 
 // 固定发布证书：先找 ~/.android-keys/getvideo.properties，再找项目根的 keystore.properties。
-// 两者都没有（或密钥文件缺失）才回退到调试签名，保证换机器也能构建，但发布必须用固定证书。
+// 找不到就**直接构建失败**——绝不能悄悄用调试证书签一个 release 包出去，
+// 否则装到手机上又会撞上「签名不一致，无法覆盖安装」。
+// 新机器/新 Agent 环境先把密钥装回来：
+//   ./scripts/setup-release-key.sh          # 从服务器备份拉取
+// 或手动：scp tx:~/.app-keys/getvideo* ~/.android-keys/ && chmod 600 ~/.android-keys/*
 val releaseSigning: Properties? = sequenceOf(
     File(System.getProperty("user.home"), ".android-keys/getvideo.properties"),
     rootProject.file("keystore.properties"),
@@ -17,6 +21,24 @@ val releaseSigning: Properties? = sequenceOf(
     file.takeIf { it.isFile }?.let { props -> Properties().apply { props.inputStream().use { load(it) } } }
 }.firstOrNull { props ->
     props.getProperty("storeFile")?.let { File(it).isFile } == true
+}
+
+if (releaseSigning == null && providers.gradleProperty("allowDebugSignRelease").orNull != "true") {
+    throw GradleException(
+        """
+        找不到固定的发布密钥，已中止 release 构建。
+
+        请把项目密钥安装到本机后再构建：
+            ./scripts/setup-release-key.sh
+        或手工执行：
+            mkdir -p ~/.android-keys && chmod 700 ~/.android-keys
+            scp tx:~/.app-keys/getvideo-release.jks tx:~/.app-keys/getvideo.properties ~/.android-keys/
+            chmod 600 ~/.android-keys/*
+
+        详见 docs/android-release-signing.md。
+        确实只是本机临时调试、不打算发布时，才加 -PallowDebugSignRelease=true 绕过。
+        """.trimIndent()
+    )
 }
 
 android {
