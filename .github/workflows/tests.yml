@@ -9,17 +9,22 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      # ffmpeg 是测试必需、镜像又不自带，只能装。但 apt-get update 偶发会卡十几分钟，
-      # 把整个 job 拖到超时取消（2026-10-27 就因此白送过一封「Run failed」邮件）。
-      # 于是：镜像自带就跳过，否则带重试和超时上限地装。
+      # ffmpeg 是测试必需、镜像又不自带。但 GitHub runner 用的 azure apt 镜像偶发慢到离谱：
+      # 2026-10-27 实测 8 分钟还没下完 46 个包，把整个 job 拖成超时取消 → 白送一封「Run failed」邮件。
+      # 所以优先拉静态构建（十几秒），拉不到再退回 apt。
       - name: 安装 ffmpeg
-        timeout-minutes: 8
+        timeout-minutes: 12
         run: |
+          set -e
           if command -v ffmpeg; then echo "镜像已自带 ffmpeg，跳过安装"; exit 0; fi
-          sudo apt-get update -qq \
-            -o Acquire::Retries=2 \
-            -o Acquire::http::Timeout=20 \
-            -o Acquire::https::Timeout=20
+          if curl -fsSL --retry 2 --max-time 240 \
+              https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz -o /tmp/ffmpeg.tar.xz; then
+            sudo tar -xJf /tmp/ffmpeg.tar.xz -C /usr/local/bin --strip-components=1 --wildcards '*/ffmpeg' '*/ffprobe'
+            ffmpeg -version | head -1
+            exit 0
+          fi
+          echo "静态构建下载失败，退回 apt"
+          sudo apt-get update -qq -o Acquire::Retries=2
           sudo apt-get install -y --no-install-recommends ffmpeg
       - run: python -m pip install -r requirements.txt
       - run: python -m pytest tests/ -q
