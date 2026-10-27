@@ -6,6 +6,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -21,12 +23,20 @@ import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil.compose.rememberAsyncImagePainter
 import com.getvideo.app.data.repo.AppearanceBackground
 import com.getvideo.app.data.repo.BackgroundStore
 
 /** 让所有页面知道当前是否用了自定义背景：用了就把页面底色让出来。 */
 val LocalBackgroundEnabled = compositionLocalOf { false }
+
+/**
+ * 有背景图时卡片的不透明度，由「我的 → 外观」里的滑杆控制。
+ * 1.0 表示纯白不透明，越小背景透得越多。
+ */
+val LocalCardAlpha = compositionLocalOf { 0.58f }
 
 /**
  * 全局背景层：铺在页面内容之下。
@@ -62,13 +72,13 @@ fun BackgroundLayer() {
 @Composable
 fun BackgroundScrim(scrim: Float) {
     val base = if (uiIsDark()) Color(0xFF0C0A12) else Color(0xFFF5F3FA)
-    val a = scrim.coerceIn(0.06f, 0.92f)
+    val a = scrim.coerceIn(0.04f, 0.92f)
     Box(
         Modifier
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    0f to base.copy(alpha = (a + 0.16f).coerceAtMost(0.95f)),
+                    0f to base.copy(alpha = (a + 0.10f).coerceAtMost(0.9f)),
                     0.2f to base.copy(alpha = a),
                     1f to base.copy(alpha = (a * 0.82f).coerceAtLeast(0.05f)),
                 ),
@@ -99,10 +109,22 @@ fun BackgroundPreview(background: AppearanceBackground, modifier: Modifier = Mod
             Image(painter, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             BackgroundScrim(state.scrim)
         }
-        Text(
-            if (source == null) "未设置背景" else "示例文字 · 背景预览",
-            Modifier.align(Alignment.Center),
-            color = uiMuted(),
-        )
+        // 预览里放一张真卡片，拖动「卡片不透明度」滑杆时这里立刻跟着变。
+        if (source == null) {
+            Text("未设置背景", Modifier.align(Alignment.Center), color = uiMuted())
+        } else {
+            androidx.compose.material3.Surface(
+                modifier = Modifier.align(Alignment.Center).padding(horizontal = 18.dp),
+                color = uiCardColor(),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+            ) {
+                androidx.compose.foundation.layout.Column(
+                    Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                ) {
+                    Text("示例卡片", color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp)
+                    Text("卡片后面的图看得清吗", color = uiMuted(), fontSize = 11.sp)
+                }
+            }
+        }
     }
 }

@@ -5,11 +5,12 @@ import android.net.Uri
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
-/** 背景外观设置：用户自选图片或内置图的地址，以及压暗程度。 */
+/** 背景外观设置：用户自选图片或内置图的地址，以及压暗程度、卡片不透明度。 */
 data class AppearanceBackground(
     val uri: String? = null,
-    val scrim: Float = 0.22f,
+    val scrim: Float = 0.12f,
     val builtin: String? = null,
+    val cardAlpha: Float = 0.58f,
 ) {
     val enabled: Boolean get() = !uri.isNullOrBlank() || !builtin.isNullOrBlank()
 
@@ -24,8 +25,9 @@ data class AppearanceBackground(
 object BackgroundStore {
     private const val PREFS = "appearance"
     private const val KEY_URI = "background_uri"
-    private const val KEY_SCRIM = "background_scrim"
+    private const val KEY_SCRIM = "background_scrim_v2"
     private const val KEY_BUILTIN = "background_builtin"
+    private const val KEY_CARD_ALPHA = "card_alpha"
 
     /** 内置背景，随 APK 打包，选中即用。 */
     val builtins = listOf(
@@ -42,8 +44,9 @@ object BackgroundStore {
         val p = prefs(context)
         _state.value = AppearanceBackground(
             uri = p.getString(KEY_URI, null),
-            scrim = p.getFloat(KEY_SCRIM, 0.22f),
+            scrim = p.getFloat(KEY_SCRIM, 0.12f),
             builtin = p.getString(KEY_BUILTIN, null),
+            cardAlpha = p.getFloat(KEY_CARD_ALPHA, 0.58f),
         )
     }
 
@@ -60,6 +63,12 @@ object BackgroundStore {
     fun setScrim(context: Context, value: Float) {
         prefs(context).edit().putFloat(KEY_SCRIM, value).apply()
         _state.value = _state.value.copy(scrim = value)
+    }
+
+    /** 卡片不透明度：1.0 是纯白不透明，越小背景透得越多。 */
+    fun setCardAlpha(context: Context, value: Float) {
+        prefs(context).edit().putFloat(KEY_CARD_ALPHA, value).apply()
+        _state.value = _state.value.copy(cardAlpha = value)
     }
 
     fun clear(context: Context) {

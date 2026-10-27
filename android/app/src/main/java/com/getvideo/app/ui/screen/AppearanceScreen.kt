@@ -5,6 +5,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -52,7 +54,12 @@ fun AppearanceScreen() {
         }
     }
 
-    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp),
+    ) {
         SectionTitle("预览")
         SectionCard(padding = PaddingValues(10.dp)) {
             BackgroundPreview(
@@ -106,7 +113,7 @@ fun AppearanceScreen() {
                 Slider(
                     value = background.scrim,
                     onValueChange = { BackgroundStore.setScrim(context, it) },
-                    valueRange = 0.06f..0.9f,
+                    valueRange = 0.04f..0.9f,
                     enabled = background.enabled,
                 )
                 Text(
@@ -114,6 +121,41 @@ fun AppearanceScreen() {
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.primary,
                 )
+            }
+        }
+
+        SectionTitle("卡片不透明度")
+        SectionCard {
+            Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+                Text(
+                    "列表里那些白色卡片有多实。往左拖更透，背景图更明显；往右拖更白，文字更好读。",
+                    fontSize = 12.sp,
+                    color = uiMuted(),
+                    lineHeight = 17.sp,
+                )
+                Spacer(Modifier.height(6.dp))
+                Slider(
+                    value = background.cardAlpha,
+                    onValueChange = { BackgroundStore.setCardAlpha(context, it) },
+                    valueRange = 0.12f..1f,
+                    enabled = background.enabled,
+                )
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "当前 ${(background.cardAlpha * 100).toInt()}%",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(
+                        if (background.cardAlpha >= 0.97f) "完全不透明" else "可透出背景",
+                        fontSize = 12.sp,
+                        color = uiMuted(),
+                    )
+                }
             }
         }
         Spacer(Modifier.height(24.dp))

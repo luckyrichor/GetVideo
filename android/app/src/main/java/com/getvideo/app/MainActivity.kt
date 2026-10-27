@@ -41,6 +41,7 @@ import com.getvideo.app.ui.screen.MyScreen
 import com.getvideo.app.ui.screen.QueueBar
 import com.getvideo.app.ui.components.BackgroundLayer
 import com.getvideo.app.ui.components.LocalBackgroundEnabled
+import com.getvideo.app.ui.components.LocalCardAlpha
 import com.getvideo.app.ui.theme.GetVideoTheme
 
 private enum class Tab(val label: String, val icon: ImageVector) {
@@ -76,7 +77,10 @@ class MainActivity : ComponentActivity() {
                 }
 
                 // 背景图铺在最底层，页面自己让出底色，卡片保持不透明以保证可读性。
-                CompositionLocalProvider(LocalBackgroundEnabled provides background.enabled) {
+                CompositionLocalProvider(
+                    LocalBackgroundEnabled provides background.enabled,
+                    LocalCardAlpha provides background.cardAlpha,
+                ) {
                     Box(Modifier.fillMaxSize()) {
                         BackgroundLayer()
                         if (bgOnly) {

@@ -40,13 +40,34 @@ fun uiPageBackground(): Color =
     if (LocalBackgroundEnabled.current) Color.Transparent
     else if (uiIsDark()) Color(0xFF121016) else Color(0xFFF5F3FA)
 
+/** 当前卡片不透明度，外观页滑杆可调。 */
+@Composable
+fun uiCardAlpha(): Float = LocalCardAlpha.current.coerceIn(0.12f, 1f)
+
 @Composable
 fun uiCardColor(): Color =
-    if (uiIsDark()) Color(0xFF1D1A24) else Color.White
+    if (!LocalBackgroundEnabled.current) {
+        if (uiIsDark()) Color(0xFF1D1A24) else Color.White
+    } else {
+        // 有背景图时卡片改成半透明，让底图能透上来；具体多透由外观页滑杆决定。
+        if (uiIsDark()) {
+            Color(0xFF1D1A24).copy(alpha = (uiCardAlpha() + 0.16f).coerceAtMost(0.97f))
+        } else {
+            Color.White.copy(alpha = uiCardAlpha())
+        }
+    }
 
 @Composable
 fun uiHairline(): Color =
-    if (uiIsDark()) Color(0xFF312C3B) else Color(0xFFEAE6F2)
+    if (!LocalBackgroundEnabled.current) {
+        if (uiIsDark()) Color(0xFF312C3B) else Color(0xFFEAE6F2)
+    } else {
+        if (uiIsDark()) {
+            Color(0xFF312C3B).copy(alpha = (uiCardAlpha() + 0.10f).coerceAtMost(0.9f))
+        } else {
+            Color.White.copy(alpha = (uiCardAlpha() + 0.18f).coerceAtMost(0.95f))
+        }
+    }
 
 @Composable
 fun uiMuted(): Color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f)
@@ -61,7 +82,15 @@ fun uiSuccessContainer(): Color =
 
 @Composable
 fun uiAccentContainer(): Color =
-    if (uiIsDark()) Color(0xFF2A2340) else Color(0xFFF0EBFB)
+    if (!LocalBackgroundEnabled.current) {
+        if (uiIsDark()) Color(0xFF2A2340) else Color(0xFFF0EBFB)
+    } else {
+        if (uiIsDark()) {
+            Color(0xFF2A2340).copy(alpha = (uiCardAlpha() + 0.06f).coerceAtMost(0.9f))
+        } else {
+            Color(0xFFF0EBFB).copy(alpha = (uiCardAlpha() - 0.06f).coerceAtLeast(0.2f))
+        }
+    }
 
 /** 页面级背景 + 内容内边距。 */
 @Composable
