@@ -206,6 +206,45 @@ object PlayerHolder {
         indexState.value = index
     }
 
+    /**
+     * 手动切下一个，遵循当前的播放方式：
+     * 随机 → 随机挑一个别的；单曲循环 → 也换（用户主动点了「下一个」就是要换）；
+     * 列表循环 / 顺序播放 → 顺次下一个，到末尾回到第一个。
+     */
+    suspend fun next(context: Context) {
+        val list = queueState.value
+        if (list.isEmpty()) return
+        if (list.size == 1) { jump(context, 0); return }
+        val current = indexState.value.coerceIn(0, list.lastIndex)
+        val target = if (modeState.value == Mode.SHUFFLE) {
+            list.indices.filter { it != current }.random()
+        } else {
+            (current + 1) % list.size
+        }
+        jump(context, target)
+    }
+
+    /** Move existing Media3 items: the current video, position and paused/playing state survive. */
+    suspend fun reorder(context: Context, playlistId: Long?, trackIds: List<Long>): Boolean = appendMutex.withLock {
+        if (playlistId == null || playlistId != sourcePlaylistIdState.value) return@withLock false
+        val original = queueState.value
+        val moves = queueReorderMoves(original.map { it.track.id }, trackIds) ?: return@withLock false
+        val player = get(context)
+        if (player.mediaItemCount != original.size || original.indices.any {
+            player.getMediaItemAt(it).mediaId != original[it].track.id.toString()
+        }) return@withLock false
+        // Once the transaction starts, finish applying it even if the dialog is dismissed.
+        kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+            if (!PlaylistRepository(context).reorder(playlistId, trackIds)) return@withContext false
+            moves.forEach { (from, to) -> player.moveMediaItem(from, to) }
+            // A concurrent rename may have refreshed metadata while Room was saving.
+            val byId = queueState.value.associateBy { it.track.id }
+            queueState.value = trackIds.map { byId.getValue(it) }
+            indexState.value = player.currentMediaItemIndex.coerceAtLeast(0)
+            true
+        }
+    }
+
     suspend fun remove(context: Context, index: Int) {
         if (index !in queueState.value.indices) return
         val removed = queueState.value[index]

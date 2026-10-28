@@ -7,6 +7,9 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -200,21 +203,25 @@ fun AudioEditScreen(track: TrackEntity, onClose: () -> Unit, onSaved: (TrackEnti
                     Text("移动波形视窗", style = MaterialTheme.typography.labelSmall)
                     Slider(offset, { offset = it }, enabled = !busy && zoom > 1f)
                     Text("${editTime(position)} / ${editTime(duration)}")
-                    // 「播放原视频」和「试听剪辑结果」各自是一个完整的播放/暂停开关：
-                    // 正在放哪个，哪个按钮就显示「暂停」，另一个始终显示自己的入口，
-                    // 不会出现「暂停了试听却显示播放原视频」这种指向错乱。
-                    val originalPlaying = !preview && playing
-                    val previewPlaying = preview && playing
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { if (originalPlaying) player.pause() else originalAt(position, true) }, enabled = !busy) { Text(if (originalPlaying) "暂停原视频" else "播放原视频") }
+                    // 三个控制分开：
+                    // 「播放原视频」从原内容的最开头开始播；「播放剪辑片段」从保留片段的头部开始播。
+                    // 暂停/继续是一个纯图标按钮，管的是「当前正在播的那个」——
+                    // 不管正在放原视频还是剪辑片段，都由它暂停和续播，不再互相顶掉文案。
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Button(onClick = { originalAt(0, true) }, enabled = !busy) { Text("播放原视频") }
                         OutlinedButton(onClick = {
-                            if (previewPlaying) { player.pause(); return@OutlinedButton }
                             val clips = valid ?: return@OutlinedButton
                             previewSegments = clips; preview = true
                             player.setMediaItems(clips.map { AudioEditor.clippedItem(file!!, it) }); player.prepare(); player.play()
-                        }, enabled = valid != null && !busy) { Text(if (previewPlaying) "暂停试听" else "试听剪辑结果") }
+                        }, enabled = valid != null && !busy) { Text("播放剪辑片段") }
+                        FilledIconButton(onClick = { if (playing) player.pause() else player.play() }, enabled = !busy) {
+                            Icon(
+                                if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = if (playing) "暂停" else "继续播放",
+                            )
+                        }
                     }
-                    Text(if (preview) "正在预览保留片段，按原时间顺序连续播放" else "边看边选择起点和终点", style = MaterialTheme.typography.bodySmall)
+                    Text(if (preview) "正在播放保留片段，按原时间顺序连续播放；点暂停/续播按钮可停在当前位置" else "边看边选择起点和终点；点波形可跳到该位置", style = MaterialTheme.typography.bodySmall)
                     segments.forEachIndexed { index, segment ->
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             TextButton(onClick = { active = index }, enabled = !busy) { Text("${if (active == index) "● " else ""}片段 ${index + 1}  ${editTime(segment.startMs)} — ${editTime(segment.endMs)}") }

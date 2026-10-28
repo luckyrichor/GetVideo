@@ -26,6 +26,9 @@ interface PlaylistDao {
     @Query("SELECT * FROM playlist_items WHERE playlistId = :id ORDER BY orderIndex")
     suspend fun itemsNow(id: Long): List<PlaylistItemEntity>
 
+    @Query("UPDATE playlist_items SET orderIndex = :position WHERE playlistId = :id AND trackId = :trackId")
+    suspend fun setOrder(id: Long, trackId: Long, position: Int)
+
     @Query("DELETE FROM playlist_items WHERE playlistId = :id AND trackId = :trackId")
     suspend fun removeItem(id: Long, trackId: Long)
 

@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -83,18 +84,26 @@ fun MyScreen() {
     }
     val bytes = tracks.sumOf { it.localPath?.let { path -> File(path).takeIf(File::exists)?.length() } ?: 0L }
     if (showAccount) {
+        // 系统返回键与左上角箭头走同一条路：回到「我的」，而不是直接退出应用。
+        BackHandler { showAccount = false }
         SubPageScaffold("账号", onBack = { showAccount = false }) { AccountScreen() }
         return
     }
     if (showLogin) {
+        // 系统返回键与左上角箭头走同一条路：回到「我的」，而不是直接退出应用。
+        BackHandler { showLogin = false }
         SubPageScaffold("平台授权", onBack = { showLogin = false }) { LoginScreen() }
         return
     }
     if (showAgent) {
+        // 系统返回键与左上角箭头走同一条路：回到「我的」，而不是直接退出应用。
+        BackHandler { showAgent = false }
         SubPageScaffold("视频助手", onBack = { showAgent = false }) { AgentScreen() }
         return
     }
     if (showAppearance) {
+        // 系统返回键与左上角箭头走同一条路：回到「我的」，而不是直接退出应用。
+        BackHandler { showAppearance = false }
         SubPageScaffold("背景图片", onBack = { showAppearance = false }) { AppearanceScreen() }
         return
     }

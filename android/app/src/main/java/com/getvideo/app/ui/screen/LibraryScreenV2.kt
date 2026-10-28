@@ -192,6 +192,12 @@ fun LibraryScreenV2(openCategories: Boolean = false) {
         queueItems(tracks, true)
     }
 
+    // 类别视图也是一个子层级：返回键先退回上一层类别，而不是直接退出应用。
+    BackHandler(enabled = section == 1 && categoryId != null && !selecting) {
+        val parent = allCategories.firstOrNull { it.id == categoryId }?.parentId
+        exitSelection()
+        categoryId = parent
+    }
     Scaffold(
         containerColor = Color.Transparent,
         snackbarHost = { SnackbarHost(snackbar) },
@@ -764,10 +770,13 @@ private fun LibraryTrackList(
                         translationY =
                             if (active && location != null) center - location.offset - location.size / 2f
                             else 0f
+                        scaleX = if (active) 1.02f else 1f
+                        scaleY = if (active) 1.02f else 1f
+                        shadowElevation = if (active) 14f else 0f
                     },
                 dragHandle = if (selecting) null else ({
                     Box(
-                        Modifier.size(30.dp).pointerInput(track.id, saving) {
+                        Modifier.size(width = 40.dp, height = 48.dp).pointerInput(track.id, saving) {
                             detectDragGestures(
                                 onDragStart = {
                                     val info = state.layoutInfo.visibleItemsInfo.firstOrNull { it.key == track.id }
@@ -830,25 +839,31 @@ private fun LibraryAudioRow(track: TrackEntity, onPlay: () -> Unit, onMore: () -
                 if (highlighted) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f) else uiHairline(),
                 shape,
             )
-            .combinedClickable(
+            .padding(start = 4.dp, end = 2.dp, top = 9.dp, bottom = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // 只有封面/标题/播放这一块能长按进入多选。
+        // 拖动把手和「更多」放在可点击区外面 —— 否则长按把手会先触发多选，
+        // 把手随即消失，用户就以为「只能全选删除、拖不动」。
+        Row(
+            Modifier.weight(1f).combinedClickable(
                 enabled = selectionEnabled,
                 onClick = { if (selecting) onSelect() },
                 onLongClick = onSelect,
                 onLongClickLabel = "选择视频",
-            )
-            .padding(start = 8.dp, end = 2.dp, top = 9.dp, bottom = 9.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+            ),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
         if (number > 0 && !selecting) {
             Text(
                 "$number",
-                Modifier.width(24.dp),
-                textAlign = TextAlign.End,
+                Modifier.width(20.dp),
+                textAlign = TextAlign.Start,
                 maxLines = 1,
                 style = MaterialTheme.typography.labelMedium,
                 color = uiMuted(),
             )
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(6.dp))
         }
         if (selecting) {
             Checkbox(checked = selected, enabled = selectionEnabled, onCheckedChange = { onSelect() })
@@ -909,6 +924,7 @@ private fun LibraryAudioRow(track: TrackEntity, onPlay: () -> Unit, onMore: () -
                 Modifier.size(21.dp),
                 tint = if (isCurrent) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
             )
+        }
         }
         if (!selecting) {
             dragHandle?.invoke()

@@ -32,6 +32,15 @@ class PlaylistRepository(context: Context) {
         addTracks(id, trackIds)
     }
 
+    /** Update references in one transaction; do not recreate them or accept a stale membership. */
+    suspend fun reorder(id: Long, trackIds: List<Long>): Boolean = db.withTransaction {
+        if (dao.byId(id) == null) return@withTransaction false
+        val current = dao.itemsNow(id).map { it.trackId }
+        if (com.getvideo.app.player.queueReorderMoves(current, trackIds) == null) return@withTransaction false
+        trackIds.forEachIndexed { index, trackId -> dao.setOrder(id, trackId, index) }
+        true
+    }
+
     suspend fun removeTrack(id: Long, trackId: Long) = dao.removeItem(id, trackId)
 
     suspend fun rename(id: Long, name: String) {
