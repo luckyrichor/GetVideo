@@ -6,7 +6,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -60,6 +60,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import com.getvideo.app.data.local.AppDatabase
 import com.getvideo.app.data.local.CategoryEntity
@@ -77,6 +78,43 @@ import java.io.File
 private sealed interface LibraryTarget {
     data class Audio(val track: TrackEntity) : LibraryTarget
     data class Category(val category: CategoryEntity) : LibraryTarget
+}
+
+/**
+ * 库列表排序方式：点一下「排序」按钮就轮到下一种。
+ *
+ * [MANUAL] 是拖动排出来的原始顺序（sortIndex），只有它允许长按拖动；
+ * 其余几种由排序字段决定，拖动没有意义，所以拖动会自动关掉。
+ */
+private enum class LibrarySort(val label: String, val full: String) {
+    MANUAL("手动", "手动顺序，长按条目可拖动调整"),
+    DATE_DESC("最新", "按加入时间：新→旧"),
+    DATE_ASC("最早", "按加入时间：旧→新"),
+    DURATION_DESC("最长", "按时长：长→短"),
+    DURATION_ASC("最短", "按时长：短→长"),
+    TITLE_ASC("A→Z", "按名称：A→Z"),
+    TITLE_DESC("Z→A", "按名称：Z→A"),
+    SIZE_DESC("最大", "按文件大小：大→小"),
+    SIZE_ASC("最小", "按文件大小：小→大"),
+    ;
+
+    fun next(): LibrarySort = entries[(ordinal + 1) % entries.size]
+
+    companion object {
+        /** 按当前方式排序；手动方式原样返回，交给拖动顺序。 */
+        fun apply(mode: LibrarySort, tracks: List<TrackEntity>): List<TrackEntity> = when (mode) {
+            MANUAL -> tracks
+            DATE_DESC -> tracks.sortedByDescending { it.addedAtMs }
+            // 没记时间的排最后，避免「时间未记录」的条目抢占顶部。
+            DATE_ASC -> tracks.sortedWith(compareBy({ it.addedAtMs <= 0 }, { it.addedAtMs }))
+            DURATION_DESC -> tracks.sortedByDescending { it.durationSec ?: 0.0 }
+            DURATION_ASC -> tracks.sortedBy { it.durationSec ?: 0.0 }
+            TITLE_ASC -> tracks.sortedBy { it.title.lowercase() }
+            TITLE_DESC -> tracks.sortedByDescending { it.title.lowercase() }
+            SIZE_DESC -> tracks.sortedByDescending { it.audioBytes ?: 0L }
+            SIZE_ASC -> tracks.sortedBy { it.audioBytes ?: 0L }
+        }
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -139,6 +177,9 @@ fun LibraryScreenV2(openCategories: Boolean = false) {
     val libraryTracks by db.trackDao().observeAll().collectAsState(initial = emptyList())
     val categoryTracks by db.trackDao().inCategory(categoryId ?: -1L).collectAsState(initial = emptyList())
     val visibleTracks = if (section == 0) allTracks else categoryTracks
+    // 「排序」按钮循环切换的顺序：手动 → 时间 → 时长 → 名称 → 文件大小，各带升/降两向。
+    var sortMode by remember { mutableStateOf(LibrarySort.MANUAL) }
+    val displayTracks = remember(allTracks, sortMode) { LibrarySort.apply(sortMode, allTracks) }
     LaunchedEffect(visibleTracks, selecting) {
         if (selecting) batchIds = batchIds.intersect(visibleTracks.map { it.id }.toSet())
     }
@@ -295,6 +336,13 @@ fun LibraryScreenV2(openCategories: Boolean = false) {
                         }
                     }
                     Spacer(Modifier.weight(1f))
+                    // 排序：点一下换下一种方式，循环走完回到「手动排序」（手动才能长按拖动）。
+                    AssistChip(
+                        onClick = { sortMode = sortMode.next(); notice = "排序：" + sortMode.full },
+                        label = { Text(sortMode.label, style = MaterialTheme.typography.labelLarge) },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.Sort, null, Modifier.size(16.dp)) },
+                        shape = RoundedCornerShape(12.dp),
+                    )
                     // 导入本地视频：把系统文件选择器里选中的视频复制进库，靠最右侧。
                     AssistChip(
                         onClick = { importLauncher.launch(arrayOf("video/*")) },
@@ -309,7 +357,8 @@ fun LibraryScreenV2(openCategories: Boolean = false) {
                 }
                 if (allTracks.isEmpty()) EmptyLibrary()
                 else LibraryTrackList(
-                    tracks = allTracks,
+                    tracks = displayTracks,
+                    dragEnabled = sortMode == LibrarySort.MANUAL,
                     selecting = selecting,
                     batchIds = batchIds,
                     deleting = deleting,
@@ -385,7 +434,7 @@ fun LibraryScreenV2(openCategories: Boolean = false) {
                     itemsIndexed(categoryTracks, key = { _, track -> "t${track.id}" }) { index, track ->
                         LibraryAudioRow(track, number = index + 1, onPlay = { queueItems(listOf(track), true) }, onMore = { target = LibraryTarget.Audio(track) },
                         selecting = selecting, selected = track.id in batchIds, selectionEnabled = !deleting,
-                        onSelect = { selectTrack(track.id) })
+                        onSelect = { selectTrack(track.id) }, longPressSelects = true)
                     }
                 }
             }
@@ -457,6 +506,15 @@ fun LibraryScreenV2(openCategories: Boolean = false) {
                     SheetRow("重命名", Icons.Default.Edit, onClick = { editText = if (item is LibraryTarget.Audio) item.track.title else (item as LibraryTarget.Category).category.name; dialog = "rename" })
                     SheetDivider()
                     SheetRow("移动到…", Icons.AutoMirrored.Filled.DriveFileMove, onClick = { selectedParent = null; dialog = "move" })
+                    // 长按改成了拖动排序，多选就从这里进（进入时带上当前这条）。
+                    if (item is LibraryTarget.Audio) {
+                        SheetDivider()
+                        SheetRow("多选", Icons.Default.Checklist, onClick = {
+                            target = null
+                            batchIds = batchIds + item.track.id
+                            selecting = true
+                        })
+                    }
                 }
             }
             if (item is LibraryTarget.Category && item.category.kind != "LEAF") {
@@ -684,9 +742,10 @@ private fun EmptyLibrary() {
 }
 
 /**
- * 视频列表：左侧序号 + 右侧拖动把手。
+ * 视频列表：左侧序号 + 卡片内容。
  *
- * 拖动只从把手开始，否则会和上下滚动抢手势；松手时把新顺序交给 [onReorder] 落库。
+ * 拖动靠**长按**整行触发（不再单独放把手），松手时把新顺序交给 [onReorder] 落库；
+ * 按字段排序时（[dragEnabled] = false）拖动无意义，自动关掉。
  */
 @Composable
 private fun LibraryTrackList(
@@ -699,6 +758,7 @@ private fun LibraryTrackList(
     onMore: (TrackEntity) -> Unit,
     onSelect: (Long) -> Unit,
     onReorderFailed: (String) -> Unit,
+    dragEnabled: Boolean = true,
 ) {
     val state = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -774,41 +834,30 @@ private fun LibraryTrackList(
                         scaleY = if (active) 1.02f else 1f
                         shadowElevation = if (active) 14f else 0f
                     },
-                dragHandle = if (selecting) null else ({
-                    Box(
-                        Modifier.size(width = 40.dp, height = 48.dp).pointerInput(track.id, saving) {
-                            detectDragGestures(
-                                onDragStart = {
-                                    val info = state.layoutInfo.visibleItemsInfo.firstOrNull { it.key == track.id }
-                                    if (info != null) {
-                                        draggedId = track.id
-                                        center = info.offset + info.size / 2f
-                                        finger = info.offset + info.size / 2f
-                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    }
-                                },
-                                onDrag = { change, amount ->
-                                    if (draggedId == track.id) {
-                                        change.consume()
-                                        center += amount.y
-                                        finger += amount.y
-                                        moveAtCenter()
-                                    }
-                                },
-                                onDragEnd = { draggedId = null; commit() },
-                                onDragCancel = { draggedId = null; draft = latest },
-                            )
-                        },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            Icons.Default.DragHandle,
-                            "拖动排序：${track.title}",
-                            Modifier.size(18.dp),
-                            tint = uiMuted(),
+                dragModifier = if (!dragEnabled || selecting || deleting) Modifier else Modifier
+                    .pointerInput(track.id, saving) {
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = {
+                                val info = state.layoutInfo.visibleItemsInfo.firstOrNull { it.key == track.id }
+                                if (info != null) {
+                                    draggedId = track.id
+                                    center = info.offset + info.size / 2f
+                                    finger = info.offset + info.size / 2f
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                }
+                            },
+                            onDrag = { change, amount ->
+                                if (draggedId == track.id) {
+                                    change.consume()
+                                    center += amount.y
+                                    finger += amount.y
+                                    moveAtCenter()
+                                }
+                            },
+                            onDragEnd = { draggedId = null; commit() },
+                            onDragCancel = { draggedId = null; draft = latest },
                         )
-                    }
-                }),
+                    },
             )
         }
     }
@@ -818,7 +867,8 @@ private fun LibraryTrackList(
 @Composable
 private fun LibraryAudioRow(track: TrackEntity, onPlay: () -> Unit, onMore: () -> Unit,
     selecting: Boolean = false, selected: Boolean = false, selectionEnabled: Boolean = true, onSelect: () -> Unit = {},
-    number: Int = 0, modifier: Modifier = Modifier, dragHandle: (@Composable () -> Unit)? = null) {
+    number: Int = 0, modifier: Modifier = Modifier, dragModifier: Modifier = Modifier,
+    longPressSelects: Boolean = false) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val queue by PlayerHolder.queue.collectAsState()
@@ -831,6 +881,7 @@ private fun LibraryAudioRow(track: TrackEntity, onPlay: () -> Unit, onMore: () -
     Row(
         modifier
             .fillMaxWidth()
+            .then(dragModifier)
             .padding(horizontal = 12.dp, vertical = 3.dp)
             .clip(shape)
             .background(if (highlighted) uiAccentContainer() else uiCardColor())
@@ -842,15 +893,14 @@ private fun LibraryAudioRow(track: TrackEntity, onPlay: () -> Unit, onMore: () -
             .padding(start = 4.dp, end = 2.dp, top = 9.dp, bottom = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // 只有封面/标题/播放这一块能长按进入多选。
-        // 拖动把手和「更多」放在可点击区外面 —— 否则长按把手会先触发多选，
-        // 把手随即消失，用户就以为「只能全选删除、拖不动」。
+        // 长按整行 = 拖动排序（由外层的 dragModifier 处理），所以这里不再挂 onLongClick；
+        // 多选改从「更多 → 多选」进入。只有类别视图的小列表保留长按多选（longPressSelects）。
         Row(
             Modifier.weight(1f).combinedClickable(
                 enabled = selectionEnabled,
                 onClick = { if (selecting) onSelect() },
-                onLongClick = onSelect,
-                onLongClickLabel = "选择视频",
+                onLongClick = if (longPressSelects) onSelect else null,
+                onLongClickLabel = if (longPressSelects) "选择视频" else null,
             ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -858,12 +908,12 @@ private fun LibraryAudioRow(track: TrackEntity, onPlay: () -> Unit, onMore: () -
             Text(
                 "$number",
                 Modifier.width(20.dp),
-                textAlign = TextAlign.Start,
+                textAlign = TextAlign.End,
                 maxLines = 1,
                 style = MaterialTheme.typography.labelMedium,
                 color = uiMuted(),
             )
-            Spacer(Modifier.width(6.dp))
+            Spacer(Modifier.width(4.dp))
         }
         if (selecting) {
             Checkbox(checked = selected, enabled = selectionEnabled, onCheckedChange = { onSelect() })
@@ -927,7 +977,6 @@ private fun LibraryAudioRow(track: TrackEntity, onPlay: () -> Unit, onMore: () -
         }
         }
         if (!selecting) {
-            dragHandle?.invoke()
             Box(
                 Modifier.size(34.dp).clip(CircleShape).clickable(onClick = onMore),
                 contentAlignment = Alignment.Center,

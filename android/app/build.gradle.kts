@@ -74,8 +74,8 @@ android {
         minSdk = 26          // Media3 和后台播放在 8.0 以下坑太多
         testInstrumentationRunner = providers.gradleProperty("getvideoTestRunner").getOrElse("com.getvideo.app.BatchDeleteInstrumentation")
         targetSdk = 34
-        versionCode = 8
-        versionName = "0.3.1"
+        versionCode = 9
+        versionName = "0.3.2"
         manifestPlaceholders["appLabel"] = "@string/app_name"
 
     }
