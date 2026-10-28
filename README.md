@@ -1,6 +1,6 @@
 # GetVideo
 
-从 B 站、抖音分享链接下载完整视频，包含独立 Python 服务端和 Android APK。基于 GetAudio `bd4aa630ac88a84bf364a48ce5127e5d81a3ad5b` 的干净工作区创建，Android 当前版本 **0.3.9**（versionCode 16）。GetAudio 的账号、平台登录、Agent、同步、分类、播放列表、定时播放、定时抓取、去重、删除、重命名和本地剪辑逻辑继续沿用。
+从 B 站、抖音分享链接下载完整视频，包含独立 Python 服务端和 Android APK。基于 GetAudio `bd4aa630ac88a84bf364a48ce5127e5d81a3ad5b` 的干净工作区创建，Android 当前版本 **0.3.10**（versionCode 17）。GetAudio 的账号、平台登录、Agent、同步、分类、播放列表、定时播放、定时抓取、去重、删除、重命名和本地剪辑逻辑继续沿用。
 
 视频库「手动」排序与播放队列都已支持长按整行拖动排序（同一套浮层 + `residual` 落位模型，首条下拖只走一格）；库内下载失败会自动进失败报告队列并上传，媒体下载按地址重试 3 次以抗 CDN 断流。Android 播放列表现已支持长按整行拖动排序（行首把手已移除，被拖行走浮层、落点取手指所在行），外观页支持 mp4/webm 视频与 GIF/WebP 动图作为循环背景，并新增「调整显示区域」（旋转 90° / 双指缩放 / 单指平移 / 整张或铺满）来给 16:9 横图选竖屏要露的那一块，详见 [队列拖动与动态背景](docs/queue-drag-and-motion-background.md)。
 

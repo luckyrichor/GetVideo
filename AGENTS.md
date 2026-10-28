@@ -51,6 +51,7 @@ AI worker：在已配置服务器 Ark 凭据的环境运行 `.venv/bin/python -m
 
 ### 当前进度与本次交付
 
+- 2026-10-28 完成 0.3.10（versionCode 17）：与 GetAudio 0.9.10 同步，只加回内置壁纸。0.3.0–0.3.5 的默认背景 `assets/furina.jpg`（1024×1494 竖版立绘）在 0.3.6 整批换壁纸时被删，名字「芙宁娜」留给了另一张横版 2200×1253 图（旧键 `furina.jpg` 迁移到 `still_furina`，老用户升级后静默换图）。按用户要求从 git 历史取回原图，Lanczos 放大到 1508×2200（772 KB q92）+ 320×467 缩略图，作为 `still_furina_art`（「芙宁娜立绘」，排在「芙宁娜」后），静态壁纸 13 → 14 张。验证：85 项单测、Lint 0 errors / 25 warnings、release 0.3.10 (17) 33.6 MB，APK 内确认含 `assets/backgrounds/{static,thumb}/furina_art.jpg`；手机未连上（ADB 为空），外观页未真机复验。
 - 发布：0.3.5–0.3.8 只打了 tag，没有 GitHub Release；0.3.9 起每次打 tag 同时 `gh release create`，附件 `getvideo-<版本>-release.apk`，与 GetAudio 同号版本对齐。约定见 `docs/android-release-signing.md`。坑：`gh release create 文件#名字` 只加 label、不改下载文件名，要正确文件名必须先 `cp` 成目标名再上传。
 - 2026-10-28 完成 0.3.9（versionCode 16）：与 GetAudio 0.9.9 同步，只改拖动。① `itemsIndexed` **不再传 key**：带 key 时 `LazyColumn` 换位会把「第一个可见项」按 key 钉回原像素，拖第一条时第一个可见项正是被拖行，于是每换一格列表自己滚一行，表现为「原位置空掉、拖到 7、8 之间还停在最上面、留一大段透明空白」。② 加**反向换位死区**：相邻行高不同（两行/三行标题），换位后布局重排，手指落在重叠区会每帧来回换（抖动），现在换回去要再走 `0.5 × min(被拖行高, 目标行高)`。③ 删掉 `residual`，判定直接用手指视口坐标 `dropTarget(from, pointerY, slots, inset)`；`beginDrag(index)` 改按下标命中。`ReorderableQueue` 同改。验证：85 项单测（14 项拖动判定，`AnchoredSim` → `StableSim`）、Lint 0 errors / 25 warnings、debug+release 构建成功，产物 0.3.9 (16)。GetVideo 未装真机；同源 GetAudio 0.9.9 已在真机上验过下拖、上拖到第一位、再拖回和重启持久化。
 - 2026-10-28 完成 0.3.8（versionCode 15）：与 GetAudio 0.9.8 同步。① **库页手动排序拖动**（`LibraryScreenV2.LibraryTrackList`）改用与队列相同的模型：被拖行移出列表画浮层、原位留等高 `Spacer`，落点 `dropTarget(from, 槽位中心 + residual, slots, inset)`，换位后只保留「手指落在新一行里的偏移」，修「第一条往下拖立刻跳到最后」；同时把检测器从每行 `pointerInput` 挪到 `LazyColumn`（行被换成 `Spacer` 时节点会销毁，拖动第一次换位后就断）。② **下载失败自动上报**：`TrackRepository.download()` 失败时把阶段、HTTP、已收字节、期望字节、耗时、主机、异常写入 `failure-outbox` 并唤醒 `FailureReportWorker`，同视频同错误 10 分钟内只报一次。③ **媒体下载抗断流**：`DirectExtractor.download()` 每地址最多 3 次（仅 `IOException`，400/800ms 退避），带 `Connection: close` + `Accept-Encoding: identity`；`ApiProvider.humanMessage` 补 `SocketException / EOFException / SSLException` 中文映射。验证：82 项单测（11 项拖动判定）、Lint 0 errors / 25 warnings、debug+release 构建成功，产物 0.3.8 (15)。GetAudio 侧已真机验证首条下拖只走一格且重启后顺序保持；GetVideo 未装真机复验。
@@ -84,6 +85,7 @@ AI worker：在已配置服务器 Ark 凭据的环境运行 `.venv/bin/python -m
 
 ### 更新日志
 
+- 2026-10-28：0.3.10（code 17）。加回内置壁纸「芙宁娜立绘」（`still_furina_art`）：0.3.6 换壁纸时误删的旧版默认背景，从 git 历史取回并放大到长边 2200，静态壁纸 13 → 14 张。85 项单测、Lint 0 errors 通过。
 - 2026-10-28：0.3.9（code 16）。拖动第三次修正：去掉 `itemsIndexed` 的 key（避免 `LazyColumn` 按 key 锚定把列表自己滚走），加反向换位死区（避免行高不等导致的重叠区来回换），判定回到手指视口坐标并删掉 `residual`。85 项单测、Lint 0 errors 通过。
 
 - 2026-10-28：0.3.8（code 15）。库页手动排序拖动改为与队列同一套（浮层 + 等高占位 + `residual` 记账，手势挂到 `LazyColumn`），修首条下拖跳到最后与拖动中断；下载失败接入失败报告队列并唤醒上传，媒体下载按地址重试 3 次并记已收字节。82 项单测、Lint 0 errors 通过。

@@ -102,9 +102,11 @@ object BackgroundStore {
     private const val KEY_MOTION_VIDEO = "background_motion_video"
     private const val KEY_FRAME_PREFIX = "frame_"
 
-    /** 13 张静态壁纸。 */
+    /** 14 张静态壁纸。 */
     val stills = listOf(
         BuiltinBackground("furina", "芙宁娜", BuiltinKind.STILL),
+        // 0.3.0–0.3.5 的默认背景（竖版立绘）。0.3.6 换壁纸时被误删，0.3.10 按用户要求加回。
+        BuiltinBackground("furina_art", "芙宁娜立绘", BuiltinKind.STILL),
         BuiltinBackground("raiden", "雷电将军", BuiltinKind.STILL),
         BuiltinBackground("yae", "八重神子", BuiltinKind.STILL),
         BuiltinBackground("hutao", "胡桃", BuiltinKind.STILL),
