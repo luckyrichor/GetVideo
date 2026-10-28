@@ -9,17 +9,50 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      # ffmpeg 是测试必需、镜像又不自带，只能 apt 装（**不要用 johnvansickle 的静态构建**：
-      # 它没编 chromaprint，而 tests/test_fingerprint.py 要用 `-f chromaprint`，会直接跑挂）。
-      # azure 的 apt 镜像偶发慢到离谱（2026-10-27 实测 8 分钟没下完 46 个包，把 job 拖超时），
-      # 所以留足超时并加下载重试。
+      # ffmpeg 是服务端测试的必需品：tests/test_fingerprint.py 依赖 `ffmpeg -f chromaprint`
+      # 算声音指纹，而 ubuntu-24.04 镜像本身不自带 ffmpeg。
+      #
+      # 两条走过的弯路（别再回头试）：
+      #   · apt —— GitHub runner 走 azure 镜像，偶发慢到离谱：2026-10-27 实测 8 分钟没下完
+      #     46 个包，把整个 job 拖成超时取消，白送一封「Run failed」邮件。
+      #   · johnvansickle 静态构建 —— 它没编 chromaprint，指纹测试直接挂（当天刚踩）。
+      #
+      # 现在用 BtbN/FFmpeg-Builds（scripts.d/50-chromaprint.sh 默认启用 --enable-chromaprint），
+      # 托管在 GitHub CDN 上，140MB 几十秒下完。
+      # **下完必须跑冒烟测试**：万一哪天这个构建不再带 chromaprint，这里会立刻发现并自动
+      # 退回 apt，而不是让 pytest 悄悄跑挂、邮件再来一轮。
       - name: 安装 ffmpeg
         timeout-minutes: 15
         run: |
           set -e
-          if command -v ffmpeg; then echo "镜像已自带 ffmpeg，跳过安装"; exit 0; fi
+          # 冒烟测试：照抄 fingerprint.py 的真实用法，能出 raw 指纹才算装好
+          chromaprint_ok() {
+            local n
+            n=$(ffmpeg -nostdin -hide_banner -loglevel error \
+                  -f lavfi -i "sine=frequency=440:duration=5" \
+                  -vn -ac 2 -ar 11025 -f chromaprint -fp_format raw pipe:1 2>/dev/null | wc -c)
+            [ "$n" -ge 4 ]
+          }
+          install_static() {
+            curl -fsSL --retry 2 --max-time 300 -o /tmp/ffmpeg.tar.xz \
+              https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz || return 1
+            sudo tar -xJf /tmp/ffmpeg.tar.xz -C /usr/local/bin \
+              --strip-components=1 --wildcards '*/ffmpeg' '*/ffprobe'
+            rm -f /tmp/ffmpeg.tar.xz
+          }
+          if command -v ffmpeg >/dev/null 2>&1 && chromaprint_ok; then
+            echo "已有带 chromaprint 的 ffmpeg，跳过安装"; exit 0
+          fi
+          if install_static && chromaprint_ok; then
+            echo "静态构建可用：$(ffmpeg -version | head -1)"; exit 0
+          fi
+          # 静态版装在 /usr/local/bin，PATH 里排在 /usr/bin 前面，
+          # 不删掉的话 apt 装好的 ffmpeg 会被它挡住，冒烟测试永远通不过。
+          echo "静态构建拉取失败或缺 chromaprint，退回 apt"
+          sudo rm -f /usr/local/bin/ffmpeg /usr/local/bin/ffprobe
           sudo apt-get update -qq -o Acquire::Retries=3
           sudo apt-get install -y --no-install-recommends ffmpeg
+          chromaprint_ok || { echo "::error::apt 版的 ffmpeg 也没有 chromaprint"; exit 1; }
       - run: python -m pip install -r requirements.txt
       - run: python -m pytest tests/ -q
   android:
