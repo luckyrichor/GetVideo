@@ -100,15 +100,21 @@ $ANDROID_HOME/build-tools/36.0.0/apksigner verify --print-certs \
 ```bash
 git tag -a v0.3.9 -m "GetVideo 0.3.9：……" && git push origin main v0.3.9
 
+cp android/app/build/outputs/apk/release/app-release.apk /tmp/getvideo-0.3.9-release.apk
+
 gh release create v0.3.9 \
   --title "GetVideo v0.3.9" \
   --notes-file /tmp/rel-video.md \
-  android/app/build/outputs/apk/release/app-release.apk#getvideo-0.3.9-release.apk
+  /tmp/getvideo-0.3.9-release.apk
 ```
 
 约定：标题 `GetVideo v0.3.9`、tag 同名带 `v`、附件名 `getvideo-0.3.9-release.apk`，
 说明分「更新内容 / 验证」两段，末尾注明「与上一版同签名，可直接覆盖安装」，
 并与 GetAudio 同号版本对齐发布。
+
+注意 `gh release create` 的 `文件#名字` 写法**不会改下载文件名**（只是加 label），
+要正确的文件名就先把 APK 复制成目标名字再上传；上传前核对 `output-metadata.json`
+的 `versionName` 是当前版本。
 
 ## 迁移注意
 
