@@ -1,6 +1,7 @@
 package com.getvideo.app.ui.components
 
 import android.content.Context
+import android.content.res.AssetManager
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color as AndroidColor
@@ -14,8 +15,10 @@ import android.os.Build
 import android.os.SystemClock
 import android.widget.ImageView
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -33,28 +36,35 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * 动态背景：视频（mp4/webm）或动图（GIF/WebP），铺满并裁切，静音循环。
+ * 动态背景：视频（mp4/webm）或动图（GIF/WebP），铺满并裁切，**始终静音**。
  *
  * 视频用自己的 ExoPlayer 实例，和音频播放器完全分离：不抢音频焦点、音量为 0，
  * 退到后台（ON_STOP）暂停、回到前台（ON_START）继续，避免在后台空耗电。
+ * 内置素材走 assets（asset:///…），用户自选的走 content://。
  */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
-fun MotionBackground(uri: Uri, isVideo: Boolean, modifier: Modifier = Modifier) {
-    if (isVideo) VideoBackground(uri, modifier) else AnimatedImageBackground(uri, modifier)
+fun MotionBackground(
+    source: String,
+    isVideo: Boolean,
+    isAsset: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    if (isVideo) VideoBackground(source, isAsset, modifier) else AnimatedImageBackground(source, isAsset, modifier)
 }
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
-private fun VideoBackground(uri: Uri, modifier: Modifier) {
+private fun VideoBackground(source: String, isAsset: Boolean, modifier: Modifier) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    val player = androidx.compose.runtime.remember(uri, context) {
+    val player = remember(source, isAsset, context) {
+        val uri = if (isAsset) Uri.parse("asset:///$source") else Uri.parse(source)
         ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(uri))
             repeatMode = Player.REPEAT_MODE_ONE
+            // 背景永远不出声：音量归零，也不申请音频焦点。
             volume = 0f
-            // handleAudioFocus = false：背景视频不参与音频焦点，不会打断正在播的音频。
             setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -66,10 +76,10 @@ private fun VideoBackground(uri: Uri, modifier: Modifier) {
             prepare()
         }
     }
-    androidx.compose.runtime.DisposableEffect(player) {
+    DisposableEffect(player) {
         onDispose { player.release() }
     }
-    androidx.compose.runtime.DisposableEffect(lifecycle, player) {
+    DisposableEffect(lifecycle, player) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_START -> player.play()
@@ -95,10 +105,10 @@ private fun VideoBackground(uri: Uri, modifier: Modifier) {
 }
 
 @Composable
-private fun AnimatedImageBackground(uri: Uri, modifier: Modifier) {
+private fun AnimatedImageBackground(source: String, isAsset: Boolean, modifier: Modifier) {
     val context = LocalContext.current
-    val drawable by produceState<Drawable?>(initialValue = null, uri) {
-        value = withContext(Dispatchers.IO) { loadAnimatedDrawable(context, uri) }
+    val drawable by produceState<Drawable?>(initialValue = null, source, isAsset) {
+        value = withContext(Dispatchers.IO) { loadAnimatedDrawable(context, source, isAsset) }
     }
     AndroidView(
         modifier = modifier,
@@ -113,25 +123,27 @@ private fun AnimatedImageBackground(uri: Uri, modifier: Modifier) {
 }
 
 /**
- * GIF/WebP 动图：API 28+ 用 ImageDecoder（原生支持循环与 WebP），
+ * GIF/WebP 动图：API 28+ 用 ImageDecoder（原生支持循环与动画 WebP），
  * 26/27 退回 Movie 解 GIF；都失败时只显示第一帧，至少不留白屏。
  */
-private fun loadAnimatedDrawable(context: Context, uri: Uri): Drawable? = runCatching {
-    val resolver = context.contentResolver
+private fun loadAnimatedDrawable(context: Context, source: String, isAsset: Boolean): Drawable? = runCatching {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-        val source = android.graphics.ImageDecoder.createSource(resolver, uri)
-        android.graphics.ImageDecoder.decodeDrawable(source).also { drawable ->
+        val src = if (isAsset) {
+            android.graphics.ImageDecoder.createSource(context.assets, source)
+        } else {
+            android.graphics.ImageDecoder.createSource(context.contentResolver, Uri.parse(source))
+        }
+        android.graphics.ImageDecoder.decodeDrawable(src).also { drawable ->
             if (drawable is AnimatedImageDrawable) {
                 drawable.repeatCount = AnimatedImageDrawable.REPEAT_INFINITE
                 drawable.start()
             }
         }
     } else {
-        resolver.openInputStream(uri)?.use { input ->
-            Movie.decodeStream(input)?.let { MovieDrawable(it) }
-        } ?: resolver.openInputStream(uri)?.use { input ->
-            BitmapFactory.decodeStream(input)?.let { BitmapDrawable(context.resources, it) }
-        }
+        val assets: AssetManager? = if (isAsset) context.assets else null
+        val stream = { if (assets != null) assets.open(source) else context.contentResolver.openInputStream(Uri.parse(source)) }
+        stream()?.use { input -> Movie.decodeStream(input)?.let { MovieDrawable(it) } }
+            ?: stream()?.use { input -> BitmapFactory.decodeStream(input)?.let { BitmapDrawable(context.resources, it) } }
     }
 }.getOrNull()
 

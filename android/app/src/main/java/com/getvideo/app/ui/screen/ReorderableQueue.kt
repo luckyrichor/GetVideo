@@ -42,11 +42,14 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 /**
- * 拖动排序：长按任意一行开始拖（不再单独放把手，2026-10-28 按用户要求去掉行首两道横线）。
+ * 拖动排序：长按任意一行开始拖（行首不放把手，2026-10-28 按用户要求去掉两道横线）。
  *
- * 落点判定以「被拖行中心越过目标行中线」为准，而不是碰到目标行就换位 ——
- * 否则第一个条目往下拖时，换位后立刻又命中自己原来的位置，会来回抖。
- * 中心拖出视口时取最近的边缘行，保证贴边自动滚动的同时继续重排。
+ * 两条硬约定，2026-10-28 第二次返工后固定下来：
+ *  1. 被拖行的中心只跟手指走，**不叠加自动滚动量**。上一版把 `scrollBy` 的消费量加到中心上，
+ *     手指没动中心却一直漂，漂出视口后只能退化成「取最近边缘行」，
+ *     于是第一条往下拖会一路窜到最后一条，往上拖则在首尾之间来回跳。
+ *  2. 每次只和紧邻的上一行/下一行比较，越线一次也**只挪一格**。
+ *     跨多行换位会让布局在下一帧整体重排、中心落到别的行上，形成来回抖。
  */
 @Composable
 internal fun ReorderableQueue(
@@ -58,34 +61,36 @@ internal fun ReorderableQueue(
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
     val density = LocalDensity.current
-    val edge = with(density) { 48.dp.toPx() }
+    val edge = with(density) { 56.dp.toPx() }
+    val maxSpeed = with(density) { 12.dp.toPx() }
     var draft by remember { mutableStateOf(queue) }
     var draggedId by remember { mutableStateOf<Long?>(null) }
+    // 被拖行中心的屏幕坐标（相对列表视口），只随手指和初始抓取位置变化。
     var center by remember { mutableFloatStateOf(0f) }
-    var finger by remember { mutableFloatStateOf(0f) }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val latestQueue by rememberUpdatedState(queue)
     val latestReorder by rememberUpdatedState(onReorder)
 
-    LaunchedEffect(queue) { draggedId = null; draft = queue }
+    // 拖到一半队列被外部改动（切歌、删除）才放弃这次拖动，否则保留本地草稿，
+    // 不然拖动中任何一次无关的队列刷新都会把手指下的行弹回原位。
+    LaunchedEffect(queue) { if (draggedId == null) draft = queue }
 
-    fun moveAtCenter() {
+    /** 判断是否需要和相邻行换位；每次最多挪一格。 */
+    fun step() {
         val id = draggedId ?: return
-        val others = state.layoutInfo.visibleItemsInfo.filter { it.key != id }
-        if (others.isEmpty()) return
+        val layout = state.layoutInfo
+        val top = layout.viewportStartOffset.toFloat()
+        val bottom = layout.viewportEndOffset.toFloat()
+        if (bottom <= top) return
+        // 手指拖到面板外时，落点夹在可视区内，避免越界后判定失真。
+        val y = center.coerceIn(top + 1f, bottom - 1f)
         val from = draft.indexOfFirst { it.track.id == id }
         if (from < 0) return
-        // 中心在视口内就取命中的行；拖出视口后取离中心最近的边缘行，保证滚动时仍在重排。
-        val target = others.firstOrNull { center >= it.offset && center < it.offset + it.size }
-            ?: others.minByOrNull { kotlin.math.abs(it.offset + it.size / 2f - center) }
-            ?: return
-        val to = draft.indexOfFirst { it.track.id == target.key }
-        if (to < 0 || to == from) return
-        // 越过目标行中线才换位，避免刚换过去又被判回来。
-        val mid = target.offset + target.size / 2f
-        val crossed = if (to > from) center > mid else center < mid
-        if (!crossed) return
+        val infos = layout.visibleItemsInfo
+        val to = reorderStep(draft.map { it.track.id }, from, y) { key ->
+            infos.firstOrNull { it.key == key }?.let { it.offset.toFloat() to it.size.toFloat() }
+        } ?: return
         draft = draft.toMutableList().apply { add(to, removeAt(from)) }
     }
     fun saveOrder(items: List<PlayerHolder.QueueItem>) {
@@ -104,15 +109,13 @@ internal fun ReorderableQueue(
         val info = state.layoutInfo.visibleItemsInfo.firstOrNull { it.key == key } ?: return
         draggedId = key
         center = info.offset + info.size / 2f
-        finger = info.offset + info.size / 2f
         error = null
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
     }
     fun dragBy(dy: Float) {
         if (draggedId == null) return
         center += dy
-        finger += dy
-        moveAtCenter()
+        step()
     }
     fun endDrag() {
         val moved = draggedId != null && draft.map { it.track.id } != latestQueue.map { it.track.id }
@@ -122,24 +125,22 @@ internal fun ReorderableQueue(
     fun cancelDrag() { draggedId = null; draft = latestQueue }
 
     LaunchedEffect(draggedId) {
-        while (draggedId != null) {
+        if (draggedId == null) return@LaunchedEffect
+        while (true) {
             withFrameNanos { }
+            if (draggedId == null) break
             val layout = state.layoutInfo
             val top = layout.viewportStartOffset.toFloat()
             val bottom = layout.viewportEndOffset.toFloat()
             val speed = when {
-                finger < top + edge -> -(((top + edge - finger) / edge).coerceIn(0f, 1f)) * 18f
-                finger > bottom - edge -> (((finger - bottom + edge) / edge).coerceIn(0f, 1f)) * 18f
+                center < top + edge -> -(((top + edge - center) / edge).coerceIn(0f, 1f)) * maxSpeed
+                center > bottom - edge -> (((center - bottom + edge) / edge).coerceIn(0f, 1f)) * maxSpeed
                 else -> 0f
             }
-            if (speed != 0f) {
-                val consumed = state.scrollBy(speed)
-                // 列表滚动了多少，被拖行在内容坐标里也要跟着走多少，
-                // 否则手指没动、条目却被列表甩开，落点判定会失真。
-                if (consumed != 0f) center += consumed
-            }
-            // 每帧都重新判定一次：贴边滚动时即使没有新的拖动事件也要继续换位。
-            moveAtCenter()
+            // 只让列表滚动，不动被拖行的中心 —— 中心始终贴着手指，重排节奏才可控。
+            if (speed != 0f) state.scrollBy(speed)
+            // 每帧都重判一次：贴边滚动时即使没有新的拖动事件，也要继续一格一格换位。
+            step()
         }
     }
     Column {
@@ -160,9 +161,11 @@ internal fun ReorderableQueue(
         LazyColumn(state = state, modifier = Modifier.heightIn(max = 430.dp).pointerInput(Unit) {
             detectDragGesturesAfterLongPress(
                 onDragStart = { offset ->
-                    state.layoutInfo.visibleItemsInfo.firstOrNull {
-                        offset.y >= it.offset && offset.y < it.offset + it.size
-                    }?.let { item -> beginDrag(item.key as Long) }
+                    // 长按落在两行之间的 8dp 缝里也要能拖起来，命中不到就取最近的一行。
+                    val infos = state.layoutInfo.visibleItemsInfo
+                    val hit = infos.firstOrNull { offset.y >= it.offset && offset.y < it.offset + it.size }
+                        ?: infos.minByOrNull { kotlin.math.abs(it.offset + it.size / 2f - offset.y) }
+                    hit?.let { item -> beginDrag(item.key as Long) }
                 },
                 onDrag = { change, amount ->
                     if (draggedId != null) {
@@ -284,7 +287,7 @@ private fun QueueRow(
             ) {
                 Icon(
                     if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    if (playing) "暂停第${index + 1}个视频" else "播放第${index + 1}个视频",
+                    if (playing) "暂停第${index + 1}个音频" else "播放第${index + 1}个音频",
                     Modifier.size(18.dp),
                     tint = if (current) colors.onPrimary else colors.primary,
                 )
@@ -300,4 +303,37 @@ private fun QueueRow(
             }
         }
     }
+}
+
+/**
+ * 拖动时的换位判定（纯函数，单测覆盖）。
+ *
+ * 只和**紧邻**的上一行/下一行比，越过对方中线才换，且一次只挪一格：
+ *  - 跨多行换位会让布局在下一帧整体重排，中心落到别的行上，来回抖；
+ *  - 不跟「最近的一行」比，就不会在中心漂出视口时被甩到列表首尾。
+ *
+ * @param order 当前草稿顺序（各行 track id）
+ * @param from 被拖行在 [order] 里的下标
+ * @param centerY 被拖行中心的屏幕坐标（已夹在可视区内）
+ * @param bounds 某一行可见时的 (顶边, 高度)；不可见返回 null
+ * @return 换位后的新下标；不需要换位返回 null
+ */
+internal fun reorderStep(
+    order: List<Long>,
+    from: Int,
+    centerY: Float,
+    bounds: (Long) -> Pair<Float, Float>?,
+): Int? {
+    if (from !in order.indices) return null
+    if (from < order.lastIndex) {
+        bounds(order[from + 1])?.let { (top, height) ->
+            if (centerY > top + height / 2f) return from + 1
+        }
+    }
+    if (from > 0) {
+        bounds(order[from - 1])?.let { (top, height) ->
+            if (centerY < top + height / 2f) return from - 1
+        }
+    }
+    return null
 }

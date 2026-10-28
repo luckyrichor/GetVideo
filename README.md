@@ -1,6 +1,6 @@
 # GetVideo
 
-从 B 站、抖音分享链接下载完整视频，包含独立 Python 服务端和 Android APK。基于 GetAudio `bd4aa630ac88a84bf364a48ce5127e5d81a3ad5b` 的干净工作区创建，Android 当前版本 **0.3.5**（versionCode 12）。GetAudio 的账号、平台登录、Agent、同步、分类、播放列表、定时播放、定时抓取、去重、删除、重命名和本地剪辑逻辑继续沿用。
+从 B 站、抖音分享链接下载完整视频，包含独立 Python 服务端和 Android APK。基于 GetAudio `bd4aa630ac88a84bf364a48ce5127e5d81a3ad5b` 的干净工作区创建，Android 当前版本 **0.3.6**（versionCode 13）。GetAudio 的账号、平台登录、Agent、同步、分类、播放列表、定时播放、定时抓取、去重、删除、重命名和本地剪辑逻辑继续沿用。
 
 Android 播放列表现已支持长按整行拖动排序（行首把手已移除），外观页支持 mp4/webm 视频与 GIF/WebP 动图作为循环背景，详见 [队列拖动与动态背景](docs/queue-drag-and-motion-background.md)。
 

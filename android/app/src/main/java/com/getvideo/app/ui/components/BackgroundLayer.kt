@@ -47,25 +47,26 @@ val LocalCardAlpha = compositionLocalOf { 0.58f }
 @Composable
 fun BackgroundLayer() {
     val state by BackgroundStore.state.collectAsState()
-    val motion = state.motionUri
+    val motion = state.motionSource
     if (motion != null) {
         Box(Modifier.fillMaxSize()) {
             MotionBackground(
-                uri = Uri.parse(motion),
-                isVideo = state.motionIsVideo,
+                source = motion,
+                isVideo = state.motionVideo,
+                isAsset = state.motionIsAsset,
                 modifier = Modifier.fillMaxSize(),
             )
-            BackgroundScrim(state.scrim)
+            BackgroundScrim(BackgroundStore.MIN_SCRIM)
         }
         return
     }
-    val source = state.source
+    val source = state.stillSource
     if (source == null) {
         Box(Modifier.fillMaxSize().background(uiPageBackground()))
         return
     }
     Box(Modifier.fillMaxSize()) {
-        val painter = if (state.isAsset) assetPainter(source) else rememberAsyncImagePainter(model = Uri.parse(source))
+        val painter = if (state.stillIsAsset) assetPainter(source) else rememberAsyncImagePainter(model = Uri.parse(source))
         // 不模糊：背景要能一眼认出是那张图，遮罩只负责压一点亮度保证可读。
         Image(
             painter = painter,
@@ -73,7 +74,7 @@ fun BackgroundLayer() {
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize(),
         )
-        BackgroundScrim(state.scrim)
+        BackgroundScrim(BackgroundStore.MIN_SCRIM)
     }
 }
 
@@ -113,19 +114,18 @@ fun assetPainter(name: String): Painter {
 /** 供设置页预览用：把当前背景的图片与遮罩一起画出来。 */
 @Composable
 fun BackgroundPreview(background: AppearanceBackground, modifier: Modifier = Modifier) {
-    val state by BackgroundStore.state.collectAsState()
     Box(modifier.background(uiAccentContainer())) {
-        val source = background.source
-        val motion = background.motionUri
+        val source = background.stillSource
+        val motion = background.motionSource
         if (motion != null) {
-            MotionBackground(Uri.parse(motion), background.motionIsVideo, Modifier.fillMaxSize())
-            BackgroundScrim(state.scrim)
+            MotionBackground(motion, background.motionVideo, background.motionIsAsset, Modifier.fillMaxSize())
+            BackgroundScrim(BackgroundStore.MIN_SCRIM)
             return@Box
         }
         if (source != null) {
-            val painter = if (background.isAsset) assetPainter(source) else rememberAsyncImagePainter(model = Uri.parse(source))
+            val painter = if (background.stillIsAsset) assetPainter(source) else rememberAsyncImagePainter(model = Uri.parse(source))
             Image(painter, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-            BackgroundScrim(state.scrim)
+            BackgroundScrim(BackgroundStore.MIN_SCRIM)
         }
         // 预览里放一张真卡片，拖动「卡片不透明度」滑杆时这里立刻跟着变。
         if (source == null) {
