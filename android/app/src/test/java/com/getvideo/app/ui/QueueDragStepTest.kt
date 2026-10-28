@@ -1,22 +1,23 @@
 package com.getvideo.app.ui
 
-import com.getvideo.app.ui.screen.reorderStep
+import com.getvideo.app.ui.screen.QueueSlot
+import com.getvideo.app.ui.screen.dropTarget
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 播放列表拖动的换位判定。
+ * 播放列表拖动的落位判定。
  *
- * 这几条用例对应 2026-10-28 真机上反馈的两个毛病：
- *  - 「第一条往下拖会瞬间跳到最后一条」：以前拿「离中心最近的一行」当目标，中心一漂就跨几十行；
- *  - 「从下往上拖页面抖得厉害」：以前跨行换位后布局重排，下一帧又判到反向，来回跳。
- * 现在的要求只有两条：一次最多挪一格；中心不动时不换位。
+ * 用例对应 2026-10-28 真机反馈的三个毛病：
+ *  - 「第一条往下拖瞬间跳到 26~30 条」：目标只在可视区里选，任何一帧都不可能跨出屏幕；
+ *  - 「往上拖页面疯狂抖动、拖着自己停下」：行不再留在列表里做位移补偿，浮层位置只跟手指走；
+ *  - 「拖着拖着自己停」：每帧都重新判定，贴边滚动滚出来的行会接着落到手指下面。
  */
 class QueueDragStepTest {
 
-    /** 30 行、行高 100、行距 110、可视区 0..800 的简化列表。 */
+    /** 30 行、行高 100、行距 110、视口高 800 的简化列表。 */
     private class Sim(count: Int = 30) {
         val order = (1L..count).toMutableList()
         var index = 0
@@ -25,16 +26,15 @@ class QueueDragStepTest {
         val pitch = 110f
         val viewport = 800f
 
-        fun bounds(id: Long): Pair<Float, Float>? {
-            val i = order.indexOf(id)
-            if (i < 0) return null
+        /** 当前可视行，坐标是「相对视口」。 */
+        fun slots(): List<QueueSlot> = order.indices.mapNotNull { i ->
             val top = i * pitch - scroll
-            return if (top + height <= 0f || top >= viewport) null else top to height
+            if (top + height <= 0f || top >= viewport) null else QueueSlot(i, top, height)
         }
 
         /** 推进一帧，返回发生换位时的新下标。 */
         fun frame(y: Float): Int? {
-            val to = reorderStep(order, index, y.coerceIn(1f, viewport - 1f), ::bounds) ?: return null
+            val to = dropTarget(index, y, slots(), 2f) ?: return null
             order.add(to, order.removeAt(index))
             index = to
             return to
@@ -52,7 +52,7 @@ class QueueDragStepTest {
     }
 
     @Test
-    fun draggingFirstRowDownMovesOneRowAtATime() {
+    fun draggingFirstRowDownFollowsTheFingerRowByRow() {
         val sim = Sim()
         val steps = mutableListOf<Int>()
         var y = 50f
@@ -62,8 +62,8 @@ class QueueDragStepTest {
             sim.frame(y)?.let { steps += it }
         }
         assertSingleSteps(steps, 1)
-        // 手指停在 y=690：第 5 行中心 600、第 6 行中心 710，所以应该正好落在 5。
-        assertEquals(5, sim.index)
+        // 手指停在 y=690：第 7 行占 660..760，所以落在下标 6，绝不是第 26 条以后。
+        assertEquals(6, sim.index)
     }
 
     @Test
@@ -86,8 +86,7 @@ class QueueDragStepTest {
         var y = 50f
         var frames = 0
         val steps = mutableListOf<Int>()
-        // 先把手指推到下边缘，再让列表每帧滚 6px，直到滚到底。
-        while (sim.index < 29 && frames < 3000) {
+        while (sim.index < 29 && frames < 4000) {
             frames++
             y = minOf(y + 6f, sim.viewport - 1f)
             if (y >= sim.viewport - 1f) sim.scroll += 6f
@@ -106,14 +105,15 @@ class QueueDragStepTest {
         var y = 750f
         var frames = 0
         val steps = mutableListOf<Int>()
-        while (sim.index > 0 && frames < 3000) {
+        while (sim.index > 0 && frames < 4000) {
             frames++
             y = maxOf(y - 6f, 1f)
-            if (y <= 1f) sim.scroll -= 6f
+            if (y <= 1f) sim.scroll = maxOf(0f, sim.scroll - 6f)
             sim.frame(y)?.let { steps += it }
         }
         assertSingleSteps(steps, -1)
         assertEquals(0, sim.index)
+        assertEquals(30, sim.order.distinct().size)
     }
 
     @Test
@@ -122,17 +122,40 @@ class QueueDragStepTest {
         var y = 50f
         while (y < 300f) { y += 2f; sim.frame(y) }
         val settled = sim.index
-        // 中心不动，之后每帧都不该再换位（抖动就是这么来的）。
-        repeat(30) { assertNull("中心没动却换位了", sim.frame(y)) }
+        // 手指不动，之后每帧都不该再换位（抖动就是这么来的）。
+        repeat(40) { assertNull("手指没动却换位了", sim.frame(y)) }
         assertEquals(settled, sim.index)
     }
 
     @Test
-    fun offscreenNeighbourBlocksTheMoveInsteadOfJumping() {
+    fun targetIsAlwaysInsideTheVisibleWindow() {
         val sim = Sim()
-        // 目标行滚出可视区时返回 null，此时宁可不动，也不能跳到别处。
         sim.scroll = 1000f
-        val order = sim.order.toList()
-        assertNull(reorderStep(order, 0, 400f) { null })
+        val slots = sim.slots()
+        assertTrue("可视区应该有若干行", slots.isNotEmpty())
+        listOf(-9999f, 0f, 400f, 9999f).forEach { y ->
+            val to = dropTarget(12, y, slots, 2f) ?: return@forEach
+            assertTrue("落在可视区外了：y=$y → $to", to in slots.first().index..slots.last().index)
+        }
+    }
+
+    @Test
+    fun extremeDragNeverLeavesTheVisibleWindow() {
+        // 手指被拖到面板外很远（真实场景：手指滑出底部弹层），也只能落在最后一条可见行。
+        val sim = Sim()
+        val slots = sim.slots()
+        var guard = 0
+        while (guard++ < 100) {
+            val to = dropTarget(sim.index, 100000f, slots, 2f) ?: break
+            sim.order.add(to, sim.order.removeAt(sim.index))
+            sim.index = to
+        }
+        assertEquals(slots.last().index, sim.index)
+        assertTrue("不该跑到可视区外，实际 ${sim.index}", sim.index < 8)
+    }
+
+    @Test
+    fun emptySlotsAreIgnored() {
+        assertNull(dropTarget(0, 100f, emptyList(), 2f))
     }
 }

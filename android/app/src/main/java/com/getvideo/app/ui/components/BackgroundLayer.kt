@@ -2,7 +2,6 @@ package com.getvideo.app.ui.components
 
 import android.graphics.BitmapFactory
 import android.net.Uri
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,13 +20,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.painter.Painter
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.rememberAsyncImagePainter
 import com.getvideo.app.data.repo.AppearanceBackground
 import com.getvideo.app.data.repo.BackgroundStore
+import com.getvideo.app.data.repo.BuiltinKind
 
 /** 让所有页面知道当前是否用了自定义背景：用了就把页面底色让出来。 */
 val LocalBackgroundEnabled = compositionLocalOf { false }
@@ -41,39 +40,29 @@ val LocalCardAlpha = compositionLocalOf { 0.58f }
 /**
  * 全局背景层：铺在页面内容之下。
  *
- * 只在最底层画一次图片，再加一层遮罩（浅色主题用白色、深色主题用深色），
+ * 只在最底层画一次图片/动图/视频，再加一层遮罩（浅色主题用白色、深色主题用深色），
  * 页面里的卡片仍然是不透明的，所以按钮和文字不会被图片糊住。
+ * 旋转/缩放/平移由「外观 → 调整显示区域」决定，编辑页与这里用同一套几何。
  */
 @Composable
 fun BackgroundLayer() {
     val state by BackgroundStore.state.collectAsState()
     val motion = state.motionSource
-    if (motion != null) {
-        Box(Modifier.fillMaxSize()) {
-            MotionBackground(
-                source = motion,
-                isVideo = state.motionVideo,
-                isAsset = state.motionIsAsset,
-                modifier = Modifier.fillMaxSize(),
-            )
-            BackgroundScrim(BackgroundStore.MIN_SCRIM)
-        }
-        return
-    }
-    val source = state.stillSource
+    val still = state.stillSource
+    val source = motion ?: still
     if (source == null) {
         Box(Modifier.fillMaxSize().background(uiPageBackground()))
         return
     }
+    val media = if (motion != null) {
+        if (state.motionVideo) BuiltinKind.VIDEO else BuiltinKind.MOTION
+    } else {
+        BuiltinKind.STILL
+    }
+    val isAsset = if (motion != null) state.motionIsAsset else state.stillIsAsset
     Box(Modifier.fillMaxSize()) {
-        val painter = if (state.stillIsAsset) assetPainter(source) else rememberAsyncImagePainter(model = Uri.parse(source))
         // 不模糊：背景要能一眼认出是那张图，遮罩只负责压一点亮度保证可读。
-        Image(
-            painter = painter,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize(),
-        )
+        WallpaperView(source, isAsset, media, state.frame, Modifier.fillMaxSize())
         BackgroundScrim(BackgroundStore.MIN_SCRIM)
     }
 }
@@ -111,26 +100,22 @@ fun assetPainter(name: String): Painter {
     return painter ?: rememberAsyncImagePainter(model = "file:///android_asset/$name")
 }
 
-/** 供设置页预览用：把当前背景的图片与遮罩一起画出来。 */
+/** 供设置页预览用：把当前背景的图与遮罩一起画出来。 */
 @Composable
 fun BackgroundPreview(background: AppearanceBackground, modifier: Modifier = Modifier) {
     Box(modifier.background(uiAccentContainer())) {
-        val source = background.stillSource
         val motion = background.motionSource
-        if (motion != null) {
-            MotionBackground(motion, background.motionVideo, background.motionIsAsset, Modifier.fillMaxSize())
-            BackgroundScrim(BackgroundStore.MIN_SCRIM)
-            return@Box
-        }
+        val source = motion ?: background.stillSource
         if (source != null) {
-            val painter = if (background.stillIsAsset) assetPainter(source) else rememberAsyncImagePainter(model = Uri.parse(source))
-            Image(painter, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            val media = if (motion != null) {
+                if (background.motionVideo) BuiltinKind.VIDEO else BuiltinKind.MOTION
+            } else {
+                BuiltinKind.STILL
+            }
+            val isAsset = if (motion != null) background.motionIsAsset else background.stillIsAsset
+            WallpaperView(source, isAsset, media, background.frame, Modifier.fillMaxSize())
             BackgroundScrim(BackgroundStore.MIN_SCRIM)
-        }
-        // 预览里放一张真卡片，拖动「卡片不透明度」滑杆时这里立刻跟着变。
-        if (source == null) {
-            Text("未设置背景", Modifier.align(Alignment.Center), color = uiMuted())
-        } else {
+            // 预览里放一张真卡片，拖动「卡片不透明度」滑杆时这里立刻跟着变。
             androidx.compose.material3.Surface(
                 modifier = Modifier.align(Alignment.Center).padding(horizontal = 18.dp),
                 color = uiCardColor(),
@@ -143,6 +128,8 @@ fun BackgroundPreview(background: AppearanceBackground, modifier: Modifier = Mod
                     Text("卡片后面的图看得清吗", color = uiMuted(), fontSize = 11.sp)
                 }
             }
+        } else {
+            Text("未设置背景", Modifier.align(Alignment.Center), color = uiMuted())
         }
     }
 }

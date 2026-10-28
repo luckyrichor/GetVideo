@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.CropFree
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -54,6 +55,8 @@ import com.getvideo.app.ui.components.uiMuted
 fun AppearanceScreen() {
     val context = LocalContext.current
     val background by BackgroundStore.state.collectAsState()
+    // 正在调整显示区域的那个背景（null 表示没打开编辑页）。
+    var editing by remember { mutableStateOf(false) }
 
     fun takePersist(uri: android.net.Uri) {
         runCatching {
@@ -83,6 +86,15 @@ fun AppearanceScreen() {
             BackgroundStore.setMotion(context, uri, isVideo = false)
         }
     }
+
+    // 当前生效的是哪一张（内置或自选），编辑显示区域时要用它。
+    val currentSource = background.motionSource ?: background.stillSource
+    val currentMedia = when {
+        background.motionSource == null -> BuiltinKind.STILL
+        background.motionVideo -> BuiltinKind.VIDEO
+        else -> BuiltinKind.MOTION
+    }
+    val currentIsAsset = if (background.motionSource != null) background.motionIsAsset else background.stillIsAsset
 
     Column(
         Modifier
@@ -130,6 +142,21 @@ fun AppearanceScreen() {
             lineHeight = 18.sp,
             color = uiMuted(),
         )
+
+        SectionTitle("显示区域")
+        SectionCard {
+            SettingRow(
+                Icons.Rounded.CropFree,
+                "调整显示区域",
+                subtitle = if (currentSource == null) {
+                    "先选一张壁纸，再回来调旋转和位置"
+                } else {
+                    "旋转 90°、双指缩放、拖动选框：桌面壁纸是横的，竖屏只能露一小块，这里自己选"
+                },
+                showChevron = false,
+                onClick = { if (currentSource != null) editing = true },
+            )
+        }
 
         SectionTitle("自己的背景")
         SectionCard {
@@ -207,6 +234,21 @@ fun AppearanceScreen() {
             }
         }
         Spacer(Modifier.height(24.dp))
+    }
+
+    val source = currentSource
+    if (editing && source != null) {
+        WallpaperFrameEditor(
+            source = source,
+            isAsset = currentIsAsset,
+            media = currentMedia,
+            initial = background.frame,
+            onDismiss = { editing = false },
+            onSave = { frame ->
+                BackgroundStore.setFrame(context, frame)
+                editing = false
+            },
+        )
     }
 }
 

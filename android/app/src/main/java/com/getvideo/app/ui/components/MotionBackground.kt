@@ -32,30 +32,41 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import com.getvideo.app.data.repo.BuiltinKind
+import com.getvideo.app.data.repo.WallpaperFrame
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * 动态背景：视频（mp4/webm）或动图（GIF/WebP），铺满并裁切，**始终静音**。
+ * 动态背景：视频（mp4/webm）或动图（GIF/WebP），**始终静音**，可带旋转/缩放/平移。
  *
  * 视频用自己的 ExoPlayer 实例，和音频播放器完全分离：不抢音频焦点、音量为 0，
  * 退到后台（ON_STOP）暂停、回到前台（ON_START）继续，避免在后台空耗电。
  * 内置素材走 assets（asset:///…），用户自选的走 content://。
  */
-@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
 fun MotionBackground(
     source: String,
     isVideo: Boolean,
     isAsset: Boolean,
+    frame: WallpaperFrame = WallpaperFrame(),
     modifier: Modifier = Modifier,
 ) {
-    if (isVideo) VideoBackground(source, isAsset, modifier) else AnimatedImageBackground(source, isAsset, modifier)
+    WallpaperView(
+        source = source,
+        isAsset = isAsset,
+        media = if (isVideo) BuiltinKind.VIDEO else BuiltinKind.MOTION,
+        frame = frame,
+        modifier = modifier,
+    )
 }
 
+/**
+ * 视频画面本身：铺满传进来的盒子（盒子已经是视频的比例，所以拉伸等于不裁切）。
+ */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
-private fun VideoBackground(source: String, isAsset: Boolean, modifier: Modifier) {
+internal fun VideoSurface(source: String, isAsset: Boolean, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val player = remember(source, isAsset, context) {
@@ -95,7 +106,8 @@ private fun VideoBackground(source: String, isAsset: Boolean, modifier: Modifier
         factory = { ctx ->
             PlayerView(ctx).apply {
                 useController = false
-                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                // 盒子已经是视频比例，FILL 不会变形，也不会二次裁切。
+                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FILL
                 setShutterBackgroundColor(AndroidColor.TRANSPARENT)
                 this.player = player
             }
@@ -104,8 +116,9 @@ private fun VideoBackground(source: String, isAsset: Boolean, modifier: Modifier
     )
 }
 
+/** 动图（GIF / 动画 WebP）画面本身。 */
 @Composable
-private fun AnimatedImageBackground(source: String, isAsset: Boolean, modifier: Modifier) {
+internal fun AnimatedImageSurface(source: String, isAsset: Boolean, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val drawable by produceState<Drawable?>(initialValue = null, source, isAsset) {
         value = withContext(Dispatchers.IO) { loadAnimatedDrawable(context, source, isAsset) }
@@ -114,7 +127,7 @@ private fun AnimatedImageBackground(source: String, isAsset: Boolean, modifier: 
         modifier = modifier,
         factory = { ctx ->
             ImageView(ctx).apply {
-                scaleType = ImageView.ScaleType.CENTER_CROP
+                scaleType = ImageView.ScaleType.FIT_XY
                 setBackgroundColor(AndroidColor.TRANSPARENT)
             }
         },

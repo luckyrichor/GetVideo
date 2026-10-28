@@ -57,6 +57,8 @@ data class AppearanceBackground(
     /** 内置背景的 id；设置后以它为准，和上面两个互斥。 */
     val builtinId: String? = null,
     val cardAlpha: Float = 0.58f,
+    /** 这张背景要旋转/缩放/平移成什么样（「外观 → 调整显示区域」）。 */
+    val frame: WallpaperFrame = WallpaperFrame(),
 ) {
     val builtin: BuiltinBackground? get() = builtinId?.let { BackgroundStore.builtinOf(it) }
 
@@ -98,6 +100,7 @@ object BackgroundStore {
     private const val KEY_CARD_ALPHA = "card_alpha"
     private const val KEY_MOTION_URI = "background_motion_uri"
     private const val KEY_MOTION_VIDEO = "background_motion_video"
+    private const val KEY_FRAME_PREFIX = "frame_"
 
     /** 13 张静态壁纸。 */
     val stills = listOf(
@@ -140,13 +143,36 @@ object BackgroundStore {
         val p = prefs(context)
         // 旧版本存的是 asset 文件名（furina.jpg），顺手迁移成新键。
         val stored = p.getString(KEY_BUILTIN, null)
-        _state.value = AppearanceBackground(
+        val loaded = AppearanceBackground(
             uri = p.getString(KEY_URI, null),
             motionUri = p.getString(KEY_MOTION_URI, null),
             motionIsVideo = p.getBoolean(KEY_MOTION_VIDEO, false),
             builtinId = builtinOf(stored)?.key ?: builtinOf("still_" + stored?.removeSuffix(".jpg"))?.key,
             cardAlpha = p.getFloat(KEY_CARD_ALPHA, 0.58f),
         )
+        _state.value = loaded.copy(frame = loadFrame(context, frameKeyOf(loaded)))
+    }
+
+    /**
+     * 每张背景各自记一份「显示区域」，换回来还在。
+     * 内置壁纸用 key（still_furina），自选文件用 uri 的哈希。
+     */
+    fun frameKeyOf(background: AppearanceBackground): String? = when {
+        background.builtinId != null -> background.builtinId
+        background.motionUri != null -> "mov:" + background.motionUri.hashCode()
+        background.uri != null -> "img:" + background.uri.hashCode()
+        else -> null
+    }
+
+    private fun loadFrame(context: Context, key: String?): WallpaperFrame =
+        if (key == null) WallpaperFrame.DEFAULT
+        else WallpaperFrame.decode(prefs(context).getString(KEY_FRAME_PREFIX + key, null))
+
+    /** 保存当前背景的旋转/缩放/平移。[] = 恢复默认（正放、铺满、居中）。 */
+    fun setFrame(context: Context, frame: WallpaperFrame) {
+        val key = frameKeyOf(_state.value) ?: return
+        prefs(context).edit().putString(KEY_FRAME_PREFIX + key, frame.encode()).apply()
+        _state.value = _state.value.copy(frame = frame)
     }
 
     fun setImage(context: Context, uri: Uri) {
@@ -155,9 +181,10 @@ object BackgroundStore {
             .remove(KEY_BUILTIN)
             .remove(KEY_MOTION_URI)
             .apply()
-        _state.value = _state.value.copy(
+        val next = _state.value.copy(
             uri = uri.toString(), builtinId = null, motionUri = null, motionIsVideo = false,
         )
+        _state.value = next.copy(frame = loadFrame(context, frameKeyOf(next)))
     }
 
     /**
@@ -171,9 +198,10 @@ object BackgroundStore {
             .remove(KEY_URI)
             .remove(KEY_BUILTIN)
             .apply()
-        _state.value = _state.value.copy(
+        val next = _state.value.copy(
             motionUri = uri.toString(), motionIsVideo = isVideo, uri = null, builtinId = null,
         )
+        _state.value = next.copy(frame = loadFrame(context, frameKeyOf(next)))
     }
 
     fun clearMotion(context: Context) {
@@ -190,9 +218,10 @@ object BackgroundStore {
             .remove(KEY_MOTION_URI)
             .remove(KEY_MOTION_VIDEO)
             .apply()
-        _state.value = _state.value.copy(
+        val next = _state.value.copy(
             builtinId = key, uri = null, motionUri = null, motionIsVideo = false,
         )
+        _state.value = next.copy(frame = loadFrame(context, frameKeyOf(next)))
     }
 
     /** 卡片不透明度：1.0 是纯白不透明，越小背景透得越多。 */

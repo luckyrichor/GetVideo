@@ -23,6 +23,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -30,6 +31,7 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -40,16 +42,24 @@ import com.getvideo.app.ui.components.uiHairline
 import com.getvideo.app.ui.components.uiMuted
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 /**
  * 拖动排序：长按任意一行开始拖（行首不放把手，2026-10-28 按用户要求去掉两道横线）。
  *
- * 两条硬约定，2026-10-28 第二次返工后固定下来：
- *  1. 被拖行的中心只跟手指走，**不叠加自动滚动量**。上一版把 `scrollBy` 的消费量加到中心上，
- *     手指没动中心却一直漂，漂出视口后只能退化成「取最近边缘行」，
- *     于是第一条往下拖会一路窜到最后一条，往上拖则在首尾之间来回跳。
- *  2. 每次只和紧邻的上一行/下一行比较，越线一次也**只挪一格**。
- *     跨多行换位会让布局在下一帧整体重排、中心落到别的行上，形成来回抖。
+ * 第三次返工（0.9.7）改了根本做法，前两版的思路是错的：
+ *
+ * 前两版都让「被拖行」留在 LazyColumn 里，靠 `translationY` 补偿它自己槽位的位移。
+ * 换位那一帧，`draft` 已经变了但布局还没跑，补偿量是按旧槽位算的，于是行会先跳一下、
+ * 下一帧再跳回来 —— 这就是「疯狂抖动」；同时补偿量算错时中心会漂出视口，
+ * 只能退化成「取最近边缘行」，于是第一条往下拖会一路窜到第 26~30 条。
+ *
+ * 现在：
+ *  1. **被拖行移出列表**，画在一个浮层里，位置只由 [dragCenter] 决定，不跟布局纠缠；
+ *     列表里留一个同样高的占位块，其它行不会跳。
+ *  2. 落位目标 = **手指当前所在的那一行**（只从可视区里选），不再比中线、不再一帧一格。
+ *     目标永远被可视区夹住，所以无论怎么拖都不可能一帧冲到列表另一头。
+ *  3. 贴边自动滚动只滚列表，不动手指位置；滚出来的行会自然落到手指下面。
  */
 @Composable
 internal fun ReorderableQueue(
@@ -61,12 +71,15 @@ internal fun ReorderableQueue(
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
     val density = LocalDensity.current
-    val edge = with(density) { 56.dp.toPx() }
-    val maxSpeed = with(density) { 12.dp.toPx() }
+    val edge = with(density) { 52.dp.toPx() }
+    val maxSpeed = with(density) { 9.dp.toPx() }
+    val inset = with(density) { 2.dp.toPx() }
     var draft by remember { mutableStateOf(queue) }
     var draggedId by remember { mutableStateOf<Long?>(null) }
-    // 被拖行中心的屏幕坐标（相对列表视口），只随手指和初始抓取位置变化。
-    var center by remember { mutableFloatStateOf(0f) }
+    // 被拖行中心的屏幕坐标（相对列表视口），只随手指变化。
+    var dragCenter by remember { mutableFloatStateOf(0f) }
+    var dragHeight by remember { mutableFloatStateOf(0f) }
+    var boxHeight by remember { mutableIntStateOf(0) }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val latestQueue by rememberUpdatedState(queue)
@@ -76,21 +89,8 @@ internal fun ReorderableQueue(
     // 不然拖动中任何一次无关的队列刷新都会把手指下的行弹回原位。
     LaunchedEffect(queue) { if (draggedId == null) draft = queue }
 
-    /** 判断是否需要和相邻行换位；每次最多挪一格。 */
-    fun step() {
-        val id = draggedId ?: return
-        val layout = state.layoutInfo
-        val top = layout.viewportStartOffset.toFloat()
-        val bottom = layout.viewportEndOffset.toFloat()
-        if (bottom <= top) return
-        // 手指拖到面板外时，落点夹在可视区内，避免越界后判定失真。
-        val y = center.coerceIn(top + 1f, bottom - 1f)
-        val from = draft.indexOfFirst { it.track.id == id }
-        if (from < 0) return
-        val infos = layout.visibleItemsInfo
-        val to = reorderStep(draft.map { it.track.id }, from, y) { key ->
-            infos.firstOrNull { it.key == key }?.let { it.offset.toFloat() to it.size.toFloat() }
-        } ?: return
+    fun move(from: Int, to: Int) {
+        if (from !in draft.indices || to !in draft.indices || from == to) return
         draft = draft.toMutableList().apply { add(to, removeAt(from)) }
     }
     fun saveOrder(items: List<PlayerHolder.QueueItem>) {
@@ -108,14 +108,10 @@ internal fun ReorderableQueue(
         if (saving) return
         val info = state.layoutInfo.visibleItemsInfo.firstOrNull { it.key == key } ?: return
         draggedId = key
-        center = info.offset + info.size / 2f
+        dragCenter = info.offset + info.size / 2f
+        dragHeight = info.size.toFloat()
         error = null
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-    }
-    fun dragBy(dy: Float) {
-        if (draggedId == null) return
-        center += dy
-        step()
     }
     fun endDrag() {
         val moved = draggedId != null && draft.map { it.track.id } != latestQueue.map { it.track.id }
@@ -124,25 +120,34 @@ internal fun ReorderableQueue(
     }
     fun cancelDrag() { draggedId = null; draft = latestQueue }
 
+    // 拖动期间每一帧：先按贴边程度滚列表，再按「手指落在哪一行」落位。
     LaunchedEffect(draggedId) {
-        if (draggedId == null) return@LaunchedEffect
+        val id = draggedId ?: return@LaunchedEffect
         while (true) {
             withFrameNanos { }
-            if (draggedId == null) break
+            if (draggedId != id) break
             val layout = state.layoutInfo
             val top = layout.viewportStartOffset.toFloat()
             val bottom = layout.viewportEndOffset.toFloat()
+            if (bottom <= top) continue
             val speed = when {
-                center < top + edge -> -(((top + edge - center) / edge).coerceIn(0f, 1f)) * maxSpeed
-                center > bottom - edge -> (((center - bottom + edge) / edge).coerceIn(0f, 1f)) * maxSpeed
+                dragCenter < top + edge ->
+                    -(((top + edge - dragCenter) / edge).coerceIn(0f, 1f)) * maxSpeed
+                dragCenter > bottom - edge ->
+                    (((dragCenter - bottom + edge) / edge).coerceIn(0f, 1f)) * maxSpeed
                 else -> 0f
             }
-            // 只让列表滚动，不动被拖行的中心 —— 中心始终贴着手指，重排节奏才可控。
             if (speed != 0f) state.scrollBy(speed)
-            // 每帧都重判一次：贴边滚动时即使没有新的拖动事件，也要继续一格一格换位。
-            step()
+            val from = draft.indexOfFirst { it.track.id == id }
+            if (from < 0) break
+            val slots = layout.visibleItemsInfo.map {
+                QueueSlot(it.index, it.offset.toFloat(), it.size.toFloat())
+            }
+            val target = dropTarget(from, dragCenter, slots, inset) ?: continue
+            move(from, target)
         }
     }
+
     Column {
         if (saving) {
             Text(
@@ -158,60 +163,92 @@ internal fun ReorderableQueue(
                 style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
             )
         }
-        LazyColumn(state = state, modifier = Modifier.heightIn(max = 430.dp).pointerInput(Unit) {
-            detectDragGesturesAfterLongPress(
-                onDragStart = { offset ->
-                    // 长按落在两行之间的 8dp 缝里也要能拖起来，命中不到就取最近的一行。
-                    val infos = state.layoutInfo.visibleItemsInfo
-                    val hit = infos.firstOrNull { offset.y >= it.offset && offset.y < it.offset + it.size }
-                        ?: infos.minByOrNull { kotlin.math.abs(it.offset + it.size / 2f - offset.y) }
-                    hit?.let { item -> beginDrag(item.key as Long) }
-                },
-                onDrag = { change, amount ->
-                    if (draggedId != null) {
-                        change.consume(); dragBy(amount.y)
+        Box(Modifier.onSizeChanged { boxHeight = it.height }) {
+            LazyColumn(state = state, modifier = Modifier.heightIn(max = 430.dp).pointerInput(Unit) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { offset ->
+                        // 长按落在两行之间的 8dp 缝里也要能拖起来，命中不到就取最近的一行。
+                        val infos = state.layoutInfo.visibleItemsInfo
+                        val hit = infos.firstOrNull { offset.y >= it.offset && offset.y < it.offset + it.size }
+                            ?: infos.minByOrNull { kotlin.math.abs(it.offset + it.size / 2f - offset.y) }
+                        hit?.let { item -> beginDrag(item.key as Long) }
+                    },
+                    onDrag = { change, amount ->
+                        if (draggedId != null) {
+                            change.consume()
+                            // 只挪手指位置，换位交给每帧的循环做，一次事件里绝不连跳好几格。
+                            dragCenter += amount.y
+                        }
+                    },
+                    onDragEnd = { endDrag() },
+                    onDragCancel = { cancelDrag() },
+                )
+            }, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                itemsIndexed(draft, key = { _, item -> item.track.id }) { i, item ->
+                    val id = item.track.id
+                    val active = draggedId == id
+                    val current = id == currentId
+                    if (active) {
+                        // 占位：保持原来的高度，让上下行原地不动，等手指把它挪到别处。
+                        Spacer(Modifier.fillMaxWidth().height(with(density) { dragHeight.toDp() }))
+                    } else {
+                        QueueRow(
+                            index = i,
+                            title = item.track.title,
+                            uploader = item.track.uploader,
+                            durationSec = item.track.durationSec,
+                            current = current,
+                            playing = current && playing,
+                            lifted = false,
+                            enabled = !saving && draggedId == null,
+                            onPlay = { onPlay(id) },
+                            onRemove = { onRemove(id) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .semantics {
+                                    customActions = listOfNotNull(
+                                        if (i > 0) CustomAccessibilityAction("上移") {
+                                            if (!saving && draggedId == null) {
+                                                saveOrder(draft.toMutableList().apply { add(i - 1, removeAt(i)) })
+                                            }
+                                            true
+                                        } else null,
+                                        if (i < draft.lastIndex) CustomAccessibilityAction("下移") {
+                                            if (!saving && draggedId == null) {
+                                                saveOrder(draft.toMutableList().apply { add(i + 1, removeAt(i)) })
+                                            }
+                                            true
+                                        } else null,
+                                    )
+                                },
+                        )
                     }
-                },
-                onDragEnd = { endDrag() },
-                onDragCancel = { cancelDrag() },
-            )
-        }, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            itemsIndexed(draft, key = { _, item -> item.track.id }) { i, item ->
-                val id = item.track.id
-                val active = draggedId == id
-                val current = id == currentId
-                val location = state.layoutInfo.visibleItemsInfo.firstOrNull { it.key == id }
+                }
+            }
+            // 浮起来的被拖行：位置只跟手指走，跟列表布局无关，所以不会抖。
+            val dragged = draft.firstOrNull { it.track.id == draggedId }
+            if (dragged != null && dragHeight > 0f) {
+                val limit = (boxHeight - dragHeight).coerceAtLeast(0f)
+                val topPx = (dragCenter - dragHeight / 2f).coerceIn(0f, limit)
                 QueueRow(
-                    index = i,
-                    title = item.track.title,
-                    uploader = item.track.uploader,
-                    durationSec = item.track.durationSec,
-                    current = current,
-                    playing = current && playing,
-                    lifted = active,
-                    enabled = !saving && draggedId == null,
-                    onPlay = { onPlay(id) },
-                    onRemove = { onRemove(id) },
+                    index = draft.indexOfFirst { it.track.id == dragged.track.id },
+                    title = dragged.track.title,
+                    uploader = dragged.track.uploader,
+                    durationSec = dragged.track.durationSec,
+                    current = dragged.track.id == currentId,
+                    playing = false,
+                    lifted = true,
+                    enabled = false,
+                    onPlay = { },
+                    onRemove = { },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .zIndex(if (active) 1f else 0f)
+                        .zIndex(2f)
+                        .offset { IntOffset(0, topPx.roundToInt()) }
                         .graphicsLayer {
-                            translationY = if (active && location != null) center - location.offset - location.size / 2f else 0f
-                            scaleX = if (active) 1.02f else 1f
-                            scaleY = if (active) 1.02f else 1f
-                            shadowElevation = if (active) 16f else 0f
-                        }
-                        .semantics {
-                            customActions = listOfNotNull(
-                                if (i > 0) CustomAccessibilityAction("上移") {
-                                    if (!saving && draggedId == null) saveOrder(draft.toMutableList().apply { add(i - 1, removeAt(i)) })
-                                    true
-                                } else null,
-                                if (i < draft.lastIndex) CustomAccessibilityAction("下移") {
-                                    if (!saving && draggedId == null) saveOrder(draft.toMutableList().apply { add(i + 1, removeAt(i)) })
-                                    true
-                                } else null,
-                            )
+                            scaleX = 1.02f
+                            scaleY = 1.02f
+                            shadowElevation = 18f
                         },
                 )
             }
@@ -241,7 +278,7 @@ private fun QueueRow(
         shape = shape,
         color = if (current) colors.primary.copy(alpha = 0.09f) else uiCardColor(),
         border = BorderStroke(1.dp, if (current) colors.primary.copy(alpha = 0.45f) else uiHairline()),
-        tonalElevation = 0.dp,
+        tonalElevation = if (lifted) 6.dp else 0.dp,
     ) {
         Row(
             Modifier.padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
@@ -305,35 +342,34 @@ private fun QueueRow(
     }
 }
 
+/** 列表里一行在视口中的位置（只收可视行）。 */
+internal data class QueueSlot(val index: Int, val top: Float, val height: Float)
+
 /**
- * 拖动时的换位判定（纯函数，单测覆盖）。
+ * 拖动落位判定（纯函数，单测覆盖）：**手指在哪一行，就落到哪一行**。
  *
- * 只和**紧邻**的上一行/下一行比，越过对方中线才换，且一次只挪一格：
- *  - 跨多行换位会让布局在下一帧整体重排，中心落到别的行上，来回抖；
- *  - 不跟「最近的一行」比，就不会在中心漂出视口时被甩到列表首尾。
+ * - 只从 [slots]（可视区）里选，目标天然被夹在可视区内 —— 这是「一帧冲到底」的根治办法；
+ * - 落在自己这行就不动，所以不会来回跳；
+ * - 落在行距缝里按下一行算，方向一致，也不会左右摇摆。
  *
- * @param order 当前草稿顺序（各行 track id）
- * @param from 被拖行在 [order] 里的下标
- * @param centerY 被拖行中心的屏幕坐标（已夹在可视区内）
- * @param bounds 某一行可见时的 (顶边, 高度)；不可见返回 null
- * @return 换位后的新下标；不需要换位返回 null
+ * @param from 被拖行当前下标
+ * @param y 手指（行中心）在视口里的坐标
+ * @param inset 顶部/底部的安全边距，避免正好压在边上时抖动
+ * @return 目标下标；不需要换位返回 null
  */
-internal fun reorderStep(
-    order: List<Long>,
+internal fun dropTarget(
     from: Int,
-    centerY: Float,
-    bounds: (Long) -> Pair<Float, Float>?,
+    y: Float,
+    slots: List<QueueSlot>,
+    inset: Float = 0f,
 ): Int? {
-    if (from !in order.indices) return null
-    if (from < order.lastIndex) {
-        bounds(order[from + 1])?.let { (top, height) ->
-            if (centerY > top + height / 2f) return from + 1
-        }
-    }
-    if (from > 0) {
-        bounds(order[from - 1])?.let { (top, height) ->
-            if (centerY < top + height / 2f) return from - 1
-        }
-    }
-    return null
+    if (slots.isEmpty() || from < 0) return null
+    val first = slots.first()
+    val last = slots.last()
+    val lo = first.top + inset
+    val hi = last.top + last.height - inset
+    if (hi <= lo) return null
+    val clamped = y.coerceIn(lo, hi)
+    val hit = slots.firstOrNull { clamped < it.top + it.height } ?: last
+    return if (hit.index == from) null else hit.index
 }
