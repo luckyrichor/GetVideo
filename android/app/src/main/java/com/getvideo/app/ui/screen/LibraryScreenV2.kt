@@ -986,7 +986,7 @@ private fun LibraryAudioRow(track: TrackEntity, onPlay: () -> Unit, onMore: () -
                 if (highlighted) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f) else uiHairline(),
                 shape,
             )
-            .padding(start = 0.dp, end = 2.dp, top = 9.dp, bottom = 9.dp),
+            .padding(start = 4.dp, end = 2.dp, top = 9.dp, bottom = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // 长按整行 = 拖动排序（由外层的 dragModifier 处理），所以这里不再挂 onLongClick；
@@ -1001,17 +1001,27 @@ private fun LibraryAudioRow(track: TrackEntity, onPlay: () -> Unit, onMore: () -
             verticalAlignment = Alignment.CenterVertically,
         ) {
         if (number > 0 && !selecting) {
-            // 序号贴最左边，后面的缩略图紧跟着它；宽度只给单位数留一点余量，两位数自然撑开。
-            Text(
-                "$number",
-                Modifier.widthIn(min = 8.dp),
-                textAlign = TextAlign.Start,
-                maxLines = 1,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Medium,
-                color = uiMuted(),
-            )
-            Spacer(Modifier.width(2.dp))
+            // 序号做成小圆标：贴左边缘、和内容只隔一点，比裸数字更好认也更整齐。
+            // 两端统一用主色实底 —— 之前「正在播放用实底、其余用 10% 淡底」会让两端看起来不一致。
+            Box(
+                Modifier
+                    .height(22.dp)
+                    .widthIn(min = 22.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    "$number",
+                    Modifier.padding(horizontal = 6.dp),
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                )
+            }
+            Spacer(Modifier.width(8.dp))
         }
         if (selecting) {
             Checkbox(checked = selected, enabled = selectionEnabled, onCheckedChange = { onSelect() })
