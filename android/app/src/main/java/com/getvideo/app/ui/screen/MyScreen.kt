@@ -125,7 +125,7 @@ fun MyScreen() {
             SettingRow(
                 Icons.Rounded.Image,
                 "背景图片",
-                subtitle = if (background.enabled) "已启用 · 可调压暗程度" else "用喜欢的图片当页面背景",
+                subtitle = if (background.enabled) "已启用" else "用喜欢的图片当页面背景",
                 value = if (background.enabled) "已开启" else "默认",
                 onClick = { showAppearance = true },
             )

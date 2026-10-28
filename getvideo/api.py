@@ -449,3 +449,6 @@ app.include_router(platform_account_router)
 
 from .recreation_api import router as recreation_router
 app.include_router(recreation_router)
+
+from .failure_reports import router as failure_report_router
+app.include_router(failure_report_router)

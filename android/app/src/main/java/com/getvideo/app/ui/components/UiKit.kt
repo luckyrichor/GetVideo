@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -39,6 +40,13 @@ fun uiIsDark(): Boolean = MaterialTheme.colorScheme.surface.luminance() < 0.5f
 fun uiPageBackground(): Color =
     if (LocalBackgroundEnabled.current) Color.Transparent
     else if (uiIsDark()) Color(0xFF121016) else Color(0xFFF5F3FA)
+
+/**
+ * 不透明页面底色：即使启用了背景图也挡住底图。
+ * 文字密集的页面（如助手页）需要它，否则字会叠在背景图上看不清。
+ */
+@Composable
+fun uiSolidPage(): Color = if (uiIsDark()) Color(0xFF121016) else Color(0xFFF5F3FA)
 
 /** 当前卡片不透明度，外观页滑杆可调。 */
 @Composable
@@ -71,6 +79,13 @@ fun uiHairline(): Color =
 
 @Composable
 fun uiMuted(): Color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f)
+
+/** 描边按钮的配色：给按钮一层实底，压在背景图上也能看清字。 */
+@Composable
+fun solidButtonColors(): androidx.compose.material3.ButtonColors = ButtonDefaults.outlinedButtonColors(
+    containerColor = uiCardColor(),
+    contentColor = MaterialTheme.colorScheme.onSurface,
+)
 
 /** 绿色用于“已建立”状态，红色沿用主题 error。 */
 @Composable

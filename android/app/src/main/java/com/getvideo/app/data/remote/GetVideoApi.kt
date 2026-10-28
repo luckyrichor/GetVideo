@@ -45,6 +45,15 @@ interface GetVideoApi {
     @POST("agent/v2/actions/{id}/result") suspend fun agentResult(@Path("id") id: String, @Body body: AgentToolResult): AgentActionDto
 
 
+    @POST("v2/diagnostics/extractions")
+    suspend fun uploadExtractionFailure(@Body body: ExtractionFailureReport): ExtractionFailureAck
+
+    @GET("v2/diagnostics/extractions")
+    suspend fun extractionFailures(@Query("limit") limit: Int = 50): List<ExtractionFailureDetail>
+
+    @GET("v2/diagnostics/extractions/{report_id}")
+    suspend fun extractionFailure(@Path("report_id") reportId: String): ExtractionFailureDetail
+
     @POST("agent/chat")
     suspend fun agentChat(@Body body: AgentChatRequest): AgentChatResponse
 

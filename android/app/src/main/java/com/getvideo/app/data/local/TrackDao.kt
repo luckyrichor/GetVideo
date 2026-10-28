@@ -10,14 +10,17 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface TrackDao {
 
-    @Query("SELECT * FROM tracks WHERE (cloudScope IN ('local','legacy_device') OR cloudScope = COALESCE((SELECT scope FROM active_scope WHERE id=0),'')) AND (title LIKE '%' || :q || '%' AND (:startMs IS NULL OR addedAtMs >= :startMs) AND (:endMs IS NULL OR addedAtMs <= :endMs)) ORDER BY addedAtMs DESC, id DESC")
+    @Query("SELECT * FROM tracks WHERE (cloudScope IN ('local','legacy_device') OR cloudScope = COALESCE((SELECT scope FROM active_scope WHERE id=0),'')) AND (title LIKE '%' || :q || '%' AND (:startMs IS NULL OR addedAtMs >= :startMs) AND (:endMs IS NULL OR addedAtMs <= :endMs)) ORDER BY sortIndex ASC, addedAtMs DESC, id DESC")
     fun allWithTimeRange(q: String, startMs: Long?, endMs: Long?): Flow<List<TrackEntity>>
 
-    @Query("SELECT * FROM tracks WHERE (cloudScope IN ('local','legacy_device') OR cloudScope = COALESCE((SELECT scope FROM active_scope WHERE id=0),'')) AND (localCategoryId = :categoryId) ORDER BY addedAtMs DESC, id DESC")
+    @Query("SELECT * FROM tracks WHERE (cloudScope IN ('local','legacy_device') OR cloudScope = COALESCE((SELECT scope FROM active_scope WHERE id=0),'')) AND (localCategoryId = :categoryId) ORDER BY sortIndex ASC, addedAtMs DESC, id DESC")
     fun inCategory(categoryId: Long): Flow<List<TrackEntity>>
 
     @Query("SELECT * FROM tracks WHERE (cloudScope IN ('local','legacy_device') OR cloudScope = COALESCE((SELECT scope FROM active_scope WHERE id=0),''))")
     suspend fun allNow(): List<TrackEntity>
+
+    @Query("UPDATE tracks SET sortIndex = :index WHERE id = :id")
+    suspend fun setSortIndex(id: Long, index: Long)
 
     @Query("SELECT * FROM cloud_mapping WHERE scope=:scope AND remoteId=:remoteId")
     suspend fun mapping(scope: String, remoteId: Long): CloudMappingEntity?

@@ -1,6 +1,7 @@
 package com.getvideo.app.ui.screen
 
 import android.content.Context
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -14,6 +15,9 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.getvideo.app.data.remote.*
+import com.getvideo.app.ui.components.solidButtonColors
+import com.getvideo.app.ui.components.uiCardColor
+import com.getvideo.app.ui.components.uiSolidPage
 import com.getvideo.app.data.repo.AgentOutbox
 import com.getvideo.app.data.repo.accountResponseIsCurrent
 import com.getvideo.app.data.repo.AccountStore
@@ -264,7 +268,7 @@ fun AgentScreen() {
     val ownerKey = "agent-${account?.userId}-${System.identityHashCode(account)}-$server"
     val vm: AgentViewModel = viewModel(key = ownerKey, factory = AgentViewModel.Factory(context, account))
     LaunchedEffect(ownerKey) { vm.refresh() }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+    Column(Modifier.fillMaxSize().background(uiSolidPage()).verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("视频 Agent", style = MaterialTheme.typography.titleLarge)
         Text("发送抖音或 B站分享链接，助手会准备提取操作，由你选择手机或服务器执行。会话和结果保存在登录账号中；长期偏好需手动确认保存。提问、视频元数据和偏好会发送给方舟模型，视频文件不会上传给模型。", style = MaterialTheme.typography.bodySmall)
@@ -273,8 +277,8 @@ fun AgentScreen() {
         if (account == null) Text("请先返回「我的」，点击访客头像登录账号。")
         else {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = vm::newConversation, enabled = !vm.busy && !vm.resultPending) { Text("新会话") }
-                OutlinedButton(onClick = { confirmClear = true }, enabled = !vm.busy && !vm.resultPending && vm.conversationId != null) { Text("删除当前会话") }
+                OutlinedButton(colors = solidButtonColors(), onClick = vm::newConversation, enabled = !vm.busy && !vm.resultPending) { Text("新会话") }
+                OutlinedButton(colors = solidButtonColors(), onClick = { confirmClear = true }, enabled = !vm.busy && !vm.resultPending && vm.conversationId != null) { Text("删除当前会话") }
             }
             if (vm.conversations.isNotEmpty()) {
                 Text("最近会话（UTC）", style = MaterialTheme.typography.labelMedium)
@@ -285,18 +289,18 @@ fun AgentScreen() {
                 }
             }
             vm.dialogue.forEach { (speaker, message) ->
-                OutlinedCard(Modifier.fillMaxWidth()) {
+                OutlinedCard(Modifier.fillMaxWidth(), colors = CardDefaults.outlinedCardColors(containerColor = uiCardColor())) {
                     Column(Modifier.padding(12.dp)) { Text(speaker, style = MaterialTheme.typography.labelMedium); Text(message) }
                 }
             }
             vm.actions.forEach { action ->
-                OutlinedCard(Modifier.fillMaxWidth()) {
+                OutlinedCard(Modifier.fillMaxWidth(), colors = CardDefaults.outlinedCardColors(containerColor = uiCardColor())) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("提取操作 · ${when(action.status) { "pending" -> "等待确认"; "running" -> "已开始"; "done" -> "已完成"; else -> "失败" }}")
                         Text(action.inputUrl, style = MaterialTheme.typography.bodySmall)
                         if (action.status == "pending") Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(onClick = { vm.execute(action, "phone") }, enabled = !vm.busy && !vm.resultPending) { Text("手机提取") }
-                            OutlinedButton(onClick = { vm.execute(action, "server") }, enabled = !vm.busy && !vm.resultPending) { Text("服务器提取") }
+                            OutlinedButton(colors = solidButtonColors(), onClick = { vm.execute(action, "server") }, enabled = !vm.busy && !vm.resultPending) { Text("服务器提取") }
                         }
                         action.result?.let { Text(if (it.success) "视频已保存：${it.title.orEmpty()}" else "提取失败：${it.diagnostic}") }
                         if (action.status == "running" && !vm.busy && !vm.resultPending) Text("若提取曾被中断，请检查视频库；需要重试时重新发送链接。")
@@ -304,10 +308,10 @@ fun AgentScreen() {
                 }
             }
             if (vm.busy) Text(vm.diagnostic.ifBlank { "助手处理中…" })
-            if (vm.resultPending) OutlinedButton(onClick = vm::retryReport, enabled = !vm.busy) { Text("同步提取结果（不会重复下载）") }
+            if (vm.resultPending) OutlinedButton(colors = solidButtonColors(), onClick = vm::retryReport, enabled = !vm.busy) { Text("同步提取结果（不会重复下载）") }
             vm.proposal?.let {
                 Text("建议保存的偏好：$it")
-                OutlinedButton(onClick = vm::acceptProposal, enabled = !vm.busy) { Text("填入偏好，确认后保存") }
+                OutlinedButton(colors = solidButtonColors(), onClick = vm::acceptProposal, enabled = !vm.busy) { Text("填入偏好，确认后保存") }
             }
             OutlinedTextField(vm.question, { vm.question = it.take(2000) }, label = { Text("分享链接或提取问题") },
                 placeholder = { Text("例如：提取这个抖音链接，或者推荐治愈的钢琴曲") }, modifier = Modifier.fillMaxWidth(), maxLines = 3)

@@ -206,3 +206,24 @@ data class PlatformAuthCompletion(
     val nickname: String,
     val session: AccountSession? = null,
 )
+
+/** 提取失败上报：App 端在失败时把分享文案和脱敏日志暂存本地，联网后补传。 */
+@Serializable
+data class ExtractionFailureReport(
+    val id: String,
+    val version: String,
+    @SerialName("occurred_at_ms") val occurredAtMs: Long,
+    @SerialName("share_text") val shareText: String,
+    val logs: List<String>,
+)
+@Serializable
+data class ExtractionFailureAck(val id: String, val stored: Boolean)
+@Serializable
+data class ExtractionFailureDetail(
+    val id: String,
+    val version: String,
+    @SerialName("occurred_at_ms") val occurredAtMs: Long,
+    @SerialName("received_at") val receivedAt: String,
+    @SerialName("share_text") val shareText: String,
+    val logs: List<String>,
+)

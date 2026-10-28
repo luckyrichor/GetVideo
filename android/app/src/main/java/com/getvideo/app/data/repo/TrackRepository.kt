@@ -49,6 +49,29 @@ class TrackRepository(private val context: Context) {
 
     suspend fun allNow(): List<TrackEntity> = trackDao.allNow()
 
+    /**
+     * 保存列表的手动顺序。
+     *
+     * 只替换「可见项」在原全量顺序里占的位置，其余记录原地不动 —— 这样在搜索结果或
+     * 类别里拖动，不会把没显示的视频挤到别处。最后整库重编号 1..N。
+     */
+    suspend fun reorderLibrary(visibleIds: List<Long>, newVisibleOrder: List<Long>) {
+        if (visibleIds.isEmpty() || visibleIds.size != newVisibleOrder.size) return
+        if (visibleIds.toSet() != newVisibleOrder.toSet()) return
+        val visible = visibleIds.toSet()
+        val full = trackDao.allNow().sortedWith(
+            compareBy<TrackEntity> { it.sortIndex }
+                .thenByDescending { it.addedAtMs }
+                .thenByDescending { it.id },
+        ).map { it.id }.toMutableList()
+        val slots = full.indices.filter { full[it] in visible }
+        if (slots.size != newVisibleOrder.size) return
+        slots.forEachIndexed { i, slot -> full[slot] = newVisibleOrder[i] }
+        db.withTransaction {
+            full.forEachIndexed { i, id -> trackDao.setSortIndex(id, i + 1L) }
+        }
+    }
+
     suspend fun byId(id: Long): TrackEntity? = trackDao.byId(id)
 
     suspend fun rename(id: Long, title: String) {
@@ -89,17 +112,35 @@ class TrackRepository(private val context: Context) {
     // ---------- 提取 ----------
 
     /** 分享文本由手机直接提取，保存到本地库，不依赖 GetVideo 服务器。 */
-    suspend fun extract(text: String, onDiagnostic: (String) -> Unit = {}): Result<TrackEntity> = runCatching {
-        withContext(Dispatchers.IO) {
-            val entity = fileMutex.withLock {
-                val extracted = DirectExtractor(context) { line ->
-                    withContext(Dispatchers.Main) { onDiagnostic(line) }
-                }.extract(text)
-                trackDao.upsertLocal(extracted)
-                extracted
+    suspend fun extract(text: String, onDiagnostic: (String) -> Unit = {}): Result<TrackEntity> {
+        val lines = mutableListOf<String>()
+        val server = settings.serverUrlNow()
+        val owner = AccountStore.forServer(server)?.userId.orEmpty()
+        return runCatching {
+            withContext(Dispatchers.IO) {
+                val entity = fileMutex.withLock {
+                    val extracted = DirectExtractor(context) { line ->
+                        lines.add(line)
+                        withContext(Dispatchers.Main) { onDiagnostic(line) }
+                    }.extract(text)
+                    trackDao.upsertLocal(extracted)
+                    extracted
+                }
+                withContext(Dispatchers.Main) { onDiagnostic("已加入本地视频库") }
+                entity
             }
-            withContext(Dispatchers.Main) { onDiagnostic("已加入本地视频库") }
-            entity
+        }.onFailure { error ->
+            // 提取失败就地暂存：分享文本 + 日志，联网后由 FailureReportWorker 上报服务器。
+            if (error is kotlinx.coroutines.CancellationException) throw error
+            withContext(NonCancellable + Dispatchers.IO) {
+                runCatching {
+                    val log = lines + "提取失败：${error.javaClass.simpleName} · ${ApiProvider.humanMessage(error)}"
+                    FailureOutbox(File(context.filesDir, "failure-outbox")).enqueue(
+                        server, owner, text, com.getvideo.app.BuildConfig.VERSION_NAME, log,
+                    )
+                    com.getvideo.app.sync.FailureReportWorker.schedule(context)
+                }.onFailure { DiagnosticsStore.event("失败报告", "本地暂存失败", false) }
+            }
         }
     }
 

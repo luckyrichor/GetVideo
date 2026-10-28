@@ -41,6 +41,11 @@ data class TrackEntity(
     @ColumnInfo(defaultValue = "0") val addedAtMs: Long = 0,
     @ColumnInfo(defaultValue = "'local'") val cloudScope: String = "local",
     val remoteTrackId: Long? = null,
+    /**
+     * 列表里的手动顺序；0 表示还没手动排过，这类记录排在最前面（新入库的自然在顶部）。
+     * 拖动排序后会给整个库重新编号 1..N。
+     */
+    @ColumnInfo(defaultValue = "0") val sortIndex: Long = 0,
 )
 
 @Entity(tableName = "categories")

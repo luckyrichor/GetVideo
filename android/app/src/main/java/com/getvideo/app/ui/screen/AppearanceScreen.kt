@@ -60,17 +60,6 @@ fun AppearanceScreen() {
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp),
     ) {
-        SectionTitle("预览")
-        SectionCard(padding = PaddingValues(10.dp)) {
-            BackgroundPreview(
-                background,
-                Modifier
-                    .fillMaxWidth()
-                    .height(150.dp)
-                    .clip(RoundedCornerShape(14.dp)),
-            )
-        }
-
         SectionTitle("背景图片")
         SectionCard {
             SettingRow(
@@ -96,30 +85,6 @@ fun AppearanceScreen() {
                     tone = MaterialTheme.colorScheme.error,
                     showChevron = false,
                     onClick = { BackgroundStore.clear(context) },
-                )
-            }
-        }
-
-        SectionTitle("压暗程度")
-        SectionCard {
-            Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
-                Text(
-                    "压暗多一些，文字更清楚；压暗少一些，图片更明显。",
-                    fontSize = 12.sp,
-                    color = uiMuted(),
-                    lineHeight = 17.sp,
-                )
-                Spacer(Modifier.height(6.dp))
-                Slider(
-                    value = background.scrim,
-                    onValueChange = { BackgroundStore.setScrim(context, it) },
-                    valueRange = 0.04f..0.9f,
-                    enabled = background.enabled,
-                )
-                Text(
-                    "当前 ${(background.scrim * 100).toInt()}%",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.primary,
                 )
             }
         }

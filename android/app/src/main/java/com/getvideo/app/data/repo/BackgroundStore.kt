@@ -5,10 +5,10 @@ import android.net.Uri
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
-/** 背景外观设置：用户自选图片或内置图的地址，以及压暗程度、卡片不透明度。 */
+/** 背景外观设置：用户自选图片或内置图的地址，以及卡片不透明度。 */
 data class AppearanceBackground(
     val uri: String? = null,
-    val scrim: Float = 0.12f,
+    val scrim: Float = BackgroundStore.MIN_SCRIM,
     val builtin: String? = null,
     val cardAlpha: Float = 0.58f,
 ) {
@@ -23,9 +23,10 @@ data class AppearanceBackground(
  * 背景图偏好。只存地址与遮罩强度，图片本身留在原处（content:// 通过持久化授权读取）。
  */
 object BackgroundStore {
+    /** 压暗程度固定为最低值，不再开放调节（2026-10-28 按用户要求移除）。 */
+    const val MIN_SCRIM = 0.04f
     private const val PREFS = "appearance"
     private const val KEY_URI = "background_uri"
-    private const val KEY_SCRIM = "background_scrim_v2"
     private const val KEY_BUILTIN = "background_builtin"
     private const val KEY_CARD_ALPHA = "card_alpha"
 
@@ -44,7 +45,7 @@ object BackgroundStore {
         val p = prefs(context)
         _state.value = AppearanceBackground(
             uri = p.getString(KEY_URI, null),
-            scrim = p.getFloat(KEY_SCRIM, 0.12f),
+            scrim = MIN_SCRIM,
             builtin = p.getString(KEY_BUILTIN, null),
             cardAlpha = p.getFloat(KEY_CARD_ALPHA, 0.58f),
         )
@@ -58,11 +59,6 @@ object BackgroundStore {
     fun setBuiltin(context: Context, asset: String?) {
         prefs(context).edit().putString(KEY_BUILTIN, asset).remove(KEY_URI).apply()
         _state.value = _state.value.copy(builtin = asset, uri = null)
-    }
-
-    fun setScrim(context: Context, value: Float) {
-        prefs(context).edit().putFloat(KEY_SCRIM, value).apply()
-        _state.value = _state.value.copy(scrim = value)
     }
 
     /** 卡片不透明度：1.0 是纯白不透明，越小背景透得越多。 */

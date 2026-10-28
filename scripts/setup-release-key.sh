@@ -38,6 +38,15 @@ fi
 
 chmod 600 "$KEYDIR/$NAME-release.jks" "$KEYDIR/$NAME.properties"
 
+# properties 里的 storeFile 可能是备份方那台机器的绝对路径（比如 Mac 的 /Users/...）。
+# 在别的机器上直接用它必然找不到文件，所以这里统一改成本机的实际安装位置。
+if grep -q '^storeFile=' "$KEYDIR/$NAME.properties"; then
+  tmp="$(mktemp)"
+  sed "s|^storeFile=.*|storeFile=$KEYDIR/$NAME-release.jks|" "$KEYDIR/$NAME.properties" > "$tmp"
+  mv "$tmp" "$KEYDIR/$NAME.properties"
+  chmod 600 "$KEYDIR/$NAME.properties"
+fi
+
 # 校验：properties 里的 storeFile 必须指向真实存在的文件
 STORE="$(grep '^storeFile=' "$KEYDIR/$NAME.properties" | cut -d= -f2-)"
 if [ ! -f "$STORE" ]; then

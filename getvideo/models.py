@@ -257,3 +257,15 @@ class AccountPlatformAttempt(Base):
     key_blob: Mapped[bytes | None] = mapped_column()
     cookie_blob: Mapped[bytes | None] = mapped_column()
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ExtractionFailure(Base):
+    """Private device extraction report, idempotent within its authenticated owner."""
+    __tablename__ = "extraction_failures"
+    owner_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    report_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    version: Mapped[str] = mapped_column(String(64))
+    occurred_at_ms: Mapped[int] = mapped_column(BigInteger)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    share_text: Mapped[str] = mapped_column(Text)
+    logs_json: Mapped[str] = mapped_column(Text)
