@@ -97,6 +97,76 @@ internal fun dropTarget(from: Int, y: Float, slots: List<QueueSlot>, inset: Floa
 `QueueDragStepTest` 从 8 项加到 11 项：首条下拖 4×33px 只挪一格、手指不动 40 帧不再换位、
 连续 25×22px 一步一格共 5 格（与 GetAudio 同源）。
 
+### 0.3.9：`key` 让列表自己滚，行高不等让它来回换
+
+0.3.8 装到真机后用户又报了两个更细的现象：
+
+> 把第一条往下拖，文件本身会随着手势往下移，但它原本区域的内容就消失了。而且往下移的位置也不对，
+> 明明移到了 7 和 8 中间，显示却还是页面最上方。……当把其他项拖到第一条，然后再拖回、往下移的时候，
+> 又会出现首条刚才的毛病，原本第一条的文件位置会留下一大段透明空白，什么都沒有，序号也会出现莫名其妙的问题。
+
+临时在拖动循环里加 `Log.d`，用真机 `input swipe 720 853 720 1600 30000`（30 秒慢速滑动：
+前 500ms 位移只有 12px，能稳稳触发长按拖动）抓日志，拿到两条决定性证据：
+
+```
+begin  offset=0 size=353 idx=0 first=0/0
+from=0 y=353.4 residual=176.9 ptr=388.9 first=0/0  target=1     → 换位
+from=1 y=353.5 residual=177.0 ptr=742.0 first=1/0  target=2     ← first 变成 1 了
+from=2 y=353.6 residual=177.1 ptr=1095  first=2/0  target=3     ← 又变成 2
+```
+
+**一、列表自己在滚。** `itemsIndexed` 带了 `key`，而 `LazyColumn` 换位时会按 key 把「第一个可见项」
+钉回原来的像素 —— 拖第一条时，第一个可见项恰好就是被拖行本身，于是**每换一格，列表就自己往下滚一行**
+（`firstVisibleItemIndex` 0→1→2，`scrollOffset` 一直是 0）。占位行留在原地、内容被推走，
+于是「顶部空一大块」「拖到 7、8 之间画面还停在最上面」，`onDragCancel` 之后残留的滚动还会让序号错位。
+
+修法不是补偿，而是**根本别让 key 钉住**：`itemsIndexed(draft)` 不传 key。key 退化成下标，
+换位不改变下标，列表在数据变化时永远不会自己滚（`findIndexByKey` 找到同一个下标）。
+行改为按位置复用 —— 行内没有按曲目记忆的状态（`LibraryAudioRow` 里只有 `LocalContext`、
+`PlayerHolder` 的全局流），实测无副作用。
+
+**二、相邻行高不等，会在重叠区里来回换。**
+
+```
+from=3 ptr=403.9 first=2/236 target=4 slots=3:117 4:400
+from=4 ptr=403.6 first=2/236 target=3 slots=3:117 4:470
+from=3 ptr=403.3 first=2/236 target=4 …
+```
+
+标题两行 / 三行的行高不同（283px vs 353px）。占位行（283）和下面那行（353）交换位置后，
+353 那一行从 `400..753` 挪到 `117..470`，手指在 403 —— 两种布局下都「在 353 那一行里」，
+于是每帧换一次、再换回来，画面就是疯狂抖。这不是坐标错误，是**双稳态**，必须加死区：
+
+```kotlin
+val dir = if (target > from) 1 else -1
+val step = 0.5f * minOf(dragHeight, targetSlot.height)
+if (dir != lastSwapDir && abs(pointerY - lastSwapY) < step) continue   // 反向换位要再走半行
+```
+
+同向换位不受限制，所以往下快拖仍然一步一格跟手；只有「刚换过去又要换回来」才需要额外半行。
+
+**三、判定基准回到手指本身。** 列表不再自己滚，`residual` 就没有存在意义了 ——
+直接用 `dropTarget(from, pointerY, slots, inset)`，`pointerY` 就是手指在视口里的真实纵坐标。
+
+队列面板（`ReorderableQueue`）同改：去 key、去 `residual`、加死区，`beginDrag(index)` 改按下标命中
+（`onDragStart` 用 `visibleItemsInfo` 的 `index` 而不是 `key`）。
+
+`QueueDragStepTest` 里模拟锚定的 `AnchoredSim` 换成 `StableSim`，四条用例：
+
+| 用例 | 断言 |
+|---|---|
+| `theGapStaysUnderTheFingerWhileDraggingTheFirstRow` | 手指每挪 3px 都检查一次：占位行的中心离手指不超过一行 |
+| `draggingTheFirstRowNeverScrollsTheListByItself` | 全程 `scroll == 0`，一次一格走到最后一格 |
+| `stillFingerKeepsTheGapAndTheOrder` | 手指不动 60 帧，占位行和换位次数都不变 |
+| `aPinnableGapKeyWouldWalkTheListAway` | 反证：把「钉得住」的锚定行为打开，手指只动 180px 就会连跳 5 格 |
+
+真机验收（0.3.9，同一份代码，真机验收见 GetAudio）：
+
+1. 首条下拖两行 —— 占位行始终在手指下面，顶部立刻由下一行补齐，序号 1..5 连续；
+2. 第 5 条拖到第 1 位 —— 占位行一路跟到第一格，顶部不空，没有「拖到顶还停在第 2 格」；
+3. 再把第 1 条拖回第 4 位 —— 没有透明空白、没有序号错乱（用户描述的第二个场景）；
+4. `am force-stop` 重启后顺序保持。
+
 ## 三、内置壁纸：13 张静态 + 3 张动图 + 3 段视频
 
 素材随 APK 打包在 `assets/backgrounds/`，选中即用：不联网、不申请相册权限、不受文件被删影响。

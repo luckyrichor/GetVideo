@@ -42,6 +42,7 @@ import com.getvideo.app.ui.components.uiHairline
 import com.getvideo.app.ui.components.uiMuted
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -79,8 +80,9 @@ internal fun ReorderableQueue(
     // 被拖行中心的屏幕坐标（相对列表视口），只随手指变化。
     var dragCenter by remember { mutableFloatStateOf(0f) }
     var dragHeight by remember { mutableFloatStateOf(0f) }
-    // 自上次换位以来手指走了多少（正 = 往下）。换位后清零，判定就不会被列表锚点平移带跑。
-    var residual by remember { mutableFloatStateOf(0f) }
+    // 上一次换位时的手指位置和方向，给「反向换位」加死区。
+    var lastSwapY by remember { mutableFloatStateOf(0f) }
+    var lastSwapDir by remember { mutableIntStateOf(0) }
     var boxHeight by remember { mutableIntStateOf(0) }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -107,13 +109,15 @@ internal fun ReorderableQueue(
             } finally { saving = false; draft = latestQueue }
         }
     }
-    fun beginDrag(key: Long) {
+    fun beginDrag(index: Int) {
         if (saving) return
-        val info = state.layoutInfo.visibleItemsInfo.firstOrNull { it.key == key } ?: return
-        draggedId = key
+        val info = state.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } ?: return
+        val id = draft.getOrNull(index)?.track?.id ?: return
+        draggedId = id
         dragCenter = info.offset + info.size / 2f
         dragHeight = info.size.toFloat()
-        residual = 0f
+        lastSwapY = dragCenter
+        lastSwapDir = 0
         error = null
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
     }
@@ -122,7 +126,7 @@ internal fun ReorderableQueue(
         draggedId = null
         if (moved) saveOrder(draft)
     }
-    fun cancelDrag() { draggedId = null; residual = 0f; draft = latestQueue }
+    fun cancelDrag() { draggedId = null; draft = latestQueue }
 
     // 拖动期间每一帧：先按贴边程度滚列表，再按「手指落在哪一行」落位。
     LaunchedEffect(draggedId) {
@@ -130,9 +134,9 @@ internal fun ReorderableQueue(
         while (true) {
             withFrameNanos { }
             if (draggedId != id) break
-            val layout = state.layoutInfo
-            val top = layout.viewportStartOffset.toFloat()
-            val bottom = layout.viewportEndOffset.toFloat()
+            val viewport = state.layoutInfo
+            val top = viewport.viewportStartOffset.toFloat()
+            val bottom = viewport.viewportEndOffset.toFloat()
             if (bottom <= top) continue
             val speed = when {
                 dragCenter < top + edge ->
@@ -141,28 +145,26 @@ internal fun ReorderableQueue(
                     (((dragCenter - bottom + edge) / edge).coerceIn(0f, 1f)) * maxSpeed
                 else -> 0f
             }
-            if (speed != 0f) {
-                state.scrollBy(speed)
-                // 内容往上滚 = 手指相对内容往下走，等价于手指位移，记账给判定用。
-                residual += speed
-            }
+            if (speed != 0f) state.scrollBy(speed)
             val from = draft.indexOfFirst { it.track.id == id }
             if (from < 0) break
+            // 滚完重新取一次布局，滚动过的槽位坐标才是这一帧真正的位置。
+            val layout = state.layoutInfo
             val slots = layout.visibleItemsInfo.map {
                 QueueSlot(it.index, it.offset.toFloat(), it.size.toFloat())
             }
-            // 判定基准 = 被拖行**当前槽位**的中心 + 自上次换位以来的手指位移。
-            // 不能直接用 dragCenter：换位时 LazyColumn 会把「第一个可见项」钉在原像素上，
-            // 槽位坐标整体平移，dragCenter 会指到别的行上，于是每帧再换一格，一路窜到列表尾部。
-            val slot = slots.firstOrNull { it.index == from } ?: continue
-            val y = slot.top + slot.height / 2f + residual
-            val target = dropTarget(from, y, slots, inset) ?: continue
-            // 换位后保留「手指在这一行里的偏移」，下一次换位才不用重新走满一行；
-            // 又不能保留绝对值 —— 锚点平移后槽位坐标已经变了。
-            val targetSlot = slots.firstOrNull { it.index == target }
-            if (move(from, target)) {
-                residual = if (targetSlot != null) y - (targetSlot.top + targetSlot.height / 2f) else 0f
-            }
+            // 判定基准 = 手指在视口里的真实位置。列表不会因为换位而自己滚动（见下面 key 的说明），
+            // 所以不必再记账「自上次换位以来的位移」。
+            val target = dropTarget(from, dragCenter, slots, inset) ?: continue
+            val dir = if (target > from) 1 else -1
+            // 反向换位的死区：换位后两行高度不同会让布局重排，手指落在重叠区里就会来回换（抖动）。
+            val step = 0.5f * minOf(
+                dragHeight,
+                slots.firstOrNull { it.index == target }?.height ?: dragHeight,
+            )
+            // 第一次换位不受限制（lastSwapDir 还是 0）。
+            if (lastSwapDir != 0 && dir != lastSwapDir && abs(dragCenter - lastSwapY) < step) continue
+            if (move(from, target)) { lastSwapY = dragCenter; lastSwapDir = dir }
         }
     }
 
@@ -189,21 +191,22 @@ internal fun ReorderableQueue(
                         val infos = state.layoutInfo.visibleItemsInfo
                         val hit = infos.firstOrNull { offset.y >= it.offset && offset.y < it.offset + it.size }
                             ?: infos.minByOrNull { kotlin.math.abs(it.offset + it.size / 2f - offset.y) }
-                        hit?.let { item -> beginDrag(item.key as Long) }
+                        hit?.let { beginDrag(it.index) }
                     },
                     onDrag = { change, amount ->
                         if (draggedId != null) {
                             change.consume()
                             // 只挪手指位置，换位交给每帧的循环做，一次事件里绝不连跳好几格。
                             dragCenter += amount.y
-                            residual += amount.y
                         }
                     },
                     onDragEnd = { endDrag() },
                     onDragCancel = { cancelDrag() },
                 )
             }, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                itemsIndexed(draft, key = { _, item -> item.track.id }) { i, item ->
+                // 故意不传 key：带 key 时 LazyColumn 换位会把「第一个可见项」按 key 钉回原像素，
+                // 列表会自己滚一格，把拖动的画面推走。不带 key 时 key 就是下标，换位不会触发滚动。
+                itemsIndexed(draft) { i, item ->
                     val id = item.track.id
                     val active = draggedId == id
                     val current = id == currentId

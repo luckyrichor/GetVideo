@@ -872,8 +872,9 @@ private fun LibraryTrackList(
     // 被拖行中心的屏幕坐标（相对列表视口），只跟手指走，用来画浮层。
     var pointerY by remember { mutableFloatStateOf(0f) }
     var dragHeight by remember { mutableFloatStateOf(0f) }
-    // 自上次换位以来手指走了多少（正 = 往下），判定用，换位后清零。
-    var residual by remember { mutableFloatStateOf(0f) }
+    // 上一次换位时的手指位置和方向，用来给「反向换位」加死区（见下面的循环）。
+    var lastSwapY by remember { mutableFloatStateOf(0f) }
+    var lastSwapDir by remember { mutableIntStateOf(0) }
     var boxHeight by remember { mutableIntStateOf(0) }
     var saving by remember { mutableStateOf(false) }
     val latest by rememberUpdatedState(tracks)
@@ -893,12 +894,14 @@ private fun LibraryTrackList(
             finally { saving = false }
         }
     }
-    fun beginDrag(id: Long) {
-        val info = state.layoutInfo.visibleItemsInfo.firstOrNull { it.key == id } ?: return
-        draggedId = id
+    fun beginDrag(index: Int) {
+        val info = state.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } ?: return
+        val track = draft.getOrNull(index) ?: return
+        draggedId = track.id
         pointerY = info.offset + info.size / 2f
         dragHeight = info.size.toFloat()
-        residual = 0f
+        lastSwapY = pointerY
+        lastSwapDir = 0
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
     }
     // 每一帧：先按贴边程度滚列表，再按「手指落在哪一行」落位。
@@ -907,32 +910,38 @@ private fun LibraryTrackList(
         while (true) {
             withFrameNanos { }
             if (draggedId != id) break
-            val layout = state.layoutInfo
-            val top = layout.viewportStartOffset.toFloat()
-            val bottom = layout.viewportEndOffset.toFloat()
+            val viewport = state.layoutInfo
+            val top = viewport.viewportStartOffset.toFloat()
+            val bottom = viewport.viewportEndOffset.toFloat()
             if (bottom <= top) continue
             val speed = when {
                 pointerY < top + edge -> -(((top + edge - pointerY) / edge).coerceIn(0f, 1f)) * maxSpeed
                 pointerY > bottom - edge -> (((pointerY - bottom + edge) / edge).coerceIn(0f, 1f)) * maxSpeed
                 else -> 0f
             }
-            if (speed != 0f) {
-                state.scrollBy(speed)
-                // 内容往上滚 = 手指相对内容往下走，等价于手指位移。
-                residual += speed
-            }
+            if (speed != 0f) state.scrollBy(speed)
             val from = draft.indexOfFirst { it.id == id }
             if (from < 0) break
+            // 滚完重新取一次布局：滚动过的槽位坐标才是这一帧真正的位置。
+            val layout = state.layoutInfo
             val slots = layout.visibleItemsInfo.map {
                 QueueSlot(it.index, it.offset.toFloat(), it.size.toFloat())
             }
-            val slot = slots.firstOrNull { it.index == from } ?: continue
-            val y = slot.top + slot.height / 2f + residual
-            val target = dropTarget(from, y, slots, inset) ?: continue
-            // 换位后保留「手指落在这一行的哪个位置」，同时丢掉槽位绝对值（锚点会整体平移）。
-            val targetSlot = slots.firstOrNull { it.index == target }
+            // 手指在视口里的真实位置就是判定基准：列表自己不会因为换位而滚动（见下方 key 的说明），
+            // 所以不需要再记「自上次换位以来的位移」。
+            val target = dropTarget(from, pointerY, slots, inset) ?: continue
+            val dir = if (target > from) 1 else -1
+            // 反向换位的死区：相邻两行高度不一样（两行标题 vs 三行标题），换位后布局会重排，
+            // 手指正好落在「换回去也说得通」的重叠区里 —— 没有死区就每帧来回换，画面疯狂抖。
+            val step = 0.5f * minOf(
+                dragHeight,
+                slots.firstOrNull { it.index == target }?.height ?: dragHeight,
+            )
+            // 第一次换位不受限制（lastSwapDir 还是 0），否则从行尾开始拖会觉得发涩。
+            if (lastSwapDir != 0 && dir != lastSwapDir && abs(pointerY - lastSwapY) < step) continue
             draft = draft.toMutableList().apply { add(target, removeAt(from)) }
-            residual = if (targetSlot != null) y - (targetSlot.top + targetSlot.height / 2f) else 0f
+            lastSwapY = pointerY
+            lastSwapDir = dir
         }
     }
 
@@ -949,14 +958,13 @@ private fun LibraryTrackList(
                             val infos = state.layoutInfo.visibleItemsInfo
                             val hit = infos.firstOrNull { offset.y >= it.offset && offset.y < it.offset + it.size }
                                 ?: infos.minByOrNull { abs(it.offset + it.size / 2f - offset.y) }
-                            if (!saving) hit?.let { beginDrag(it.key as Long) }
+                            if (!saving) hit?.let { beginDrag(it.index) }
                         },
                         onDrag = { change, amount ->
                             if (draggedId != null) {
                                 change.consume()
                                 // 一次事件只挪位置，换位交给每帧的循环。
                                 pointerY += amount.y
-                                residual += amount.y
                             }
                         },
                         onDragEnd = {
@@ -965,12 +973,16 @@ private fun LibraryTrackList(
                                 commit()
                             }
                         },
-                        onDragCancel = { draggedId = null; residual = 0f; draft = latest },
+                        onDragCancel = { draggedId = null; draft = latest },
                     )
                 }
             },
         ) {
-            itemsIndexed(draft, key = { _, track -> track.id }) { index, track ->
+            // 故意不给 itemsIndexed 传 key：有 key 时 LazyColumn 换位会把「第一个可见项」按 key
+            // 钉回原像素，于是列表自己滚一格 —— 拖第一条时第一个可见项正是被拖行，每换一格
+            // 列表就整体上移一行，表现就是「拖到 7、8 之间画面还停在最上面」「顶部空一大块」。
+            // 不传 key 时 key 就是下标，换位后下标不变，列表永远不会自己滚，视口稳住不动。
+            itemsIndexed(draft) { index, track ->
                 if (draggedId == track.id) {
                     // 占位：保住原来的高度，上下行原地不动。
                     Spacer(Modifier.fillMaxWidth().height(with(density) { dragHeight.toDp() }))
