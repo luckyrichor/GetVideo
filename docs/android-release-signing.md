@@ -95,6 +95,21 @@ $ANDROID_HOME/build-tools/36.0.0/apksigner verify --print-certs \
   app/build/outputs/apk/release/app-release.apk | grep SHA-256
 ```
 
+## 发布：标签 + GitHub Release（每次都要）
+
+```bash
+git tag -a v0.3.9 -m "GetVideo 0.3.9：……" && git push origin main v0.3.9
+
+gh release create v0.3.9 \
+  --title "GetVideo v0.3.9" \
+  --notes-file /tmp/rel-video.md \
+  android/app/build/outputs/apk/release/app-release.apk#getvideo-0.3.9-release.apk
+```
+
+约定：标题 `GetVideo v0.3.9`、tag 同名带 `v`、附件名 `getvideo-0.3.9-release.apk`，
+说明分「更新内容 / 验证」两段，末尾注明「与上一版同签名，可直接覆盖安装」，
+并与 GetAudio 同号版本对齐发布。
+
 ## 迁移注意
 
 换成固定证书是一次性的"签名断代"：手机上装旧证书包的设备，第一次升级必须卸载重装

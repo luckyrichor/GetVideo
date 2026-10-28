@@ -51,7 +51,8 @@ AI worker：在已配置服务器 Ark 凭据的环境运行 `.venv/bin/python -m
 
 ### 当前进度与本次交付
 
-- 2026-10-28 完成 0.3.9（versionCode 16）：与 GetAudio 0.9.9 同步，只改拖动。① `itemsIndexed` **不再传 key**：带 key 时 `LazyColumn` 换位会把「第一个可见项」按 key 钉回原像素，拖第一条时第一个可见项正是被拖行，于是每换一格列表自己滚一行，表现为「原位置空掉、拖到 7、8 之间还停在最上面、留一大段透明空白」。② 加**反向换位死区**：相邻行高不同（两行/三行标题），换位后布局重排，手指落在重叠区会每帧来回换（抖动），现在换回去要再走 `0.5 × min(被拖行高, 目标行高)`。③ 删掉 `residual`，判定直接用手指视口坐标 `dropTarget(from, pointerY, slots, inset)`；`beginDrag(index)` 改按下标命中。`ReorderableQueue` 同改。验证：83 项单测（14 项拖动判定，`AnchoredSim` → `StableSim`）、Lint 0 errors / 25 warnings、debug+release 构建成功，产物 0.3.9 (16)。GetVideo 未装真机；同源 GetAudio 0.9.9 已在真机上验过下拖、上拖到第一位、再拖回和重启持久化。
+- 发布：0.3.5–0.3.8 只打了 tag，没有 GitHub Release；0.3.9 起每次打 tag 同时 `gh release create`，附件 `getvideo-<版本>-release.apk`，与 GetAudio 同号版本对齐。约定见 `docs/android-release-signing.md`。
+- 2026-10-28 完成 0.3.9（versionCode 16）：与 GetAudio 0.9.9 同步，只改拖动。① `itemsIndexed` **不再传 key**：带 key 时 `LazyColumn` 换位会把「第一个可见项」按 key 钉回原像素，拖第一条时第一个可见项正是被拖行，于是每换一格列表自己滚一行，表现为「原位置空掉、拖到 7、8 之间还停在最上面、留一大段透明空白」。② 加**反向换位死区**：相邻行高不同（两行/三行标题），换位后布局重排，手指落在重叠区会每帧来回换（抖动），现在换回去要再走 `0.5 × min(被拖行高, 目标行高)`。③ 删掉 `residual`，判定直接用手指视口坐标 `dropTarget(from, pointerY, slots, inset)`；`beginDrag(index)` 改按下标命中。`ReorderableQueue` 同改。验证：85 项单测（14 项拖动判定，`AnchoredSim` → `StableSim`）、Lint 0 errors / 25 warnings、debug+release 构建成功，产物 0.3.9 (16)。GetVideo 未装真机；同源 GetAudio 0.9.9 已在真机上验过下拖、上拖到第一位、再拖回和重启持久化。
 - 2026-10-28 完成 0.3.8（versionCode 15）：与 GetAudio 0.9.8 同步。① **库页手动排序拖动**（`LibraryScreenV2.LibraryTrackList`）改用与队列相同的模型：被拖行移出列表画浮层、原位留等高 `Spacer`，落点 `dropTarget(from, 槽位中心 + residual, slots, inset)`，换位后只保留「手指落在新一行里的偏移」，修「第一条往下拖立刻跳到最后」；同时把检测器从每行 `pointerInput` 挪到 `LazyColumn`（行被换成 `Spacer` 时节点会销毁，拖动第一次换位后就断）。② **下载失败自动上报**：`TrackRepository.download()` 失败时把阶段、HTTP、已收字节、期望字节、耗时、主机、异常写入 `failure-outbox` 并唤醒 `FailureReportWorker`，同视频同错误 10 分钟内只报一次。③ **媒体下载抗断流**：`DirectExtractor.download()` 每地址最多 3 次（仅 `IOException`，400/800ms 退避），带 `Connection: close` + `Accept-Encoding: identity`；`ApiProvider.humanMessage` 补 `SocketException / EOFException / SSLException` 中文映射。验证：82 项单测（11 项拖动判定）、Lint 0 errors / 25 warnings、debug+release 构建成功，产物 0.3.8 (15)。GetAudio 侧已真机验证首条下拖只走一格且重启后顺序保持；GetVideo 未装真机复验。
 - 2026-10-28 完成 0.3.7（versionCode 14）：0.3.6 的拖动仍被用户判为坏的（首条下拖瞬间到 26–30 条、第 26 条上拖疯狂抖动且推不上去、拖着拖着停下）。根因两条：被拖行留在列表里靠 `translationY` 补偿，补偿按上一帧槽位算，换位那一帧必然错位 → 抖动；中心被夹在可视区后判定退化成「见谁换谁」→ 一帧一格连换。现在被拖行移出列表画在浮层（原位放等高 `Spacer` 占位），落点改为「手指所在行」且只从 `visibleItemsInfo` 里选（`dropTarget()` 纯函数，8 项单测），贴边滚动只滚列表不回写手指。同时外观页新增「显示区域 → 调整显示区域」：9:19.5 选框 + 旋转 90° + 双指缩放 + 单指平移 + 整张/铺满/复位，几何在 `data/repo/WallpaperFrame.kt`，每张背景单独记忆；静态壁纸由长边 1280 重出为 2200。详见 docs/queue-drag-and-motion-background.md。
 - 2026-10-28 完成 0.3.6（versionCode 13）：拖动返工 —— 0.3.5 把贴边滚动的像素补进被拖行中心，首条下拖会窜到末条、末条上拖剧烈抖动；现在中心只跟手指走、判定夹在可视区内、只和紧邻上下行比且一次只挪一格，判定抽成纯函数 `reorderStep()` 并补 6 项单测。同时内置 13 张静态壁纸 + 3 张动图 + 3 段视频（全部静音，随 APK 打包），外观页两排缩略图可点选。详见 docs/queue-drag-and-motion-background.md。
@@ -83,7 +84,7 @@ AI worker：在已配置服务器 Ark 凭据的环境运行 `.venv/bin/python -m
 
 ### 更新日志
 
-- 2026-10-28：0.3.9（code 16）。拖动第三次修正：去掉 `itemsIndexed` 的 key（避免 `LazyColumn` 按 key 锚定把列表自己滚走），加反向换位死区（避免行高不等导致的重叠区来回换），判定回到手指视口坐标并删掉 `residual`。83 项单测、Lint 0 errors 通过。
+- 2026-10-28：0.3.9（code 16）。拖动第三次修正：去掉 `itemsIndexed` 的 key（避免 `LazyColumn` 按 key 锚定把列表自己滚走），加反向换位死区（避免行高不等导致的重叠区来回换），判定回到手指视口坐标并删掉 `residual`。85 项单测、Lint 0 errors 通过。
 
 - 2026-10-28：0.3.8（code 15）。库页手动排序拖动改为与队列同一套（浮层 + 等高占位 + `residual` 记账，手势挂到 `LazyColumn`），修首条下拖跳到最后与拖动中断；下载失败接入失败报告队列并唤醒上传，媒体下载按地址重试 3 次并记已收字节。82 项单测、Lint 0 errors 通过。
 
