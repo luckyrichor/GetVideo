@@ -81,38 +81,121 @@ private sealed interface LibraryTarget {
 }
 
 /**
- * 库列表排序方式：点一下「排序」按钮就轮到下一种。
+ * 排序字段：点排序按钮右侧的箭头从下拉里选一个，方向则靠点按钮主体切换。
  *
  * [MANUAL] 是拖动排出来的原始顺序（sortIndex），只有它允许长按拖动；
- * 其余几种由排序字段决定，拖动没有意义，所以拖动会自动关掉。
+ * 其余几种由字段决定，拖动没有意义，所以拖动会自动关掉。
+ * [defaultAsc] 是第一次选到这个字段时的默认方向：「时间/时长/文件」倒序（新的、长的、大的在前），
+ * 「名称」正序（A→Z）。
  */
-private enum class LibrarySort(val label: String, val full: String) {
-    MANUAL("手动", "手动顺序，长按条目可拖动调整"),
-    DATE_DESC("最新", "按加入时间：新→旧"),
-    DATE_ASC("最早", "按加入时间：旧→新"),
-    DURATION_DESC("最长", "按时长：长→短"),
-    DURATION_ASC("最短", "按时长：短→长"),
-    TITLE_ASC("A→Z", "按名称：A→Z"),
-    TITLE_DESC("Z→A", "按名称：Z→A"),
-    SIZE_DESC("最大", "按文件大小：大→小"),
-    SIZE_ASC("最小", "按文件大小：小→大"),
+private enum class SortField(val label: String, val defaultAsc: Boolean) {
+    FILE("文件", false),
+    MANUAL("手动", false),
+    TIME("时间", false),
+    DURATION("时长", false),
+    NAME("名称", true),
     ;
 
-    fun next(): LibrarySort = entries[(ordinal + 1) % entries.size]
+    /** 排序结果的一句人话说明，用于切换时弹提示条。 */
+    fun describe(ascending: Boolean): String = when (this) {
+        MANUAL -> "手动顺序，长按条目可拖动调整"
+        FILE -> "按文件大小：" + if (ascending) "小→大" else "大→小"
+        TIME -> "按加入时间：" + if (ascending) "旧→新" else "新→旧"
+        DURATION -> "按时长：" + if (ascending) "短→长" else "长→短"
+        NAME -> "按名称：" + if (ascending) "A→Z" else "Z→A"
+    }
 
     companion object {
-        /** 按当前方式排序；手动方式原样返回，交给拖动顺序。 */
-        fun apply(mode: LibrarySort, tracks: List<TrackEntity>): List<TrackEntity> = when (mode) {
-            MANUAL -> tracks
-            DATE_DESC -> tracks.sortedByDescending { it.addedAtMs }
-            // 没记时间的排最后，避免「时间未记录」的条目抢占顶部。
-            DATE_ASC -> tracks.sortedWith(compareBy({ it.addedAtMs <= 0 }, { it.addedAtMs }))
-            DURATION_DESC -> tracks.sortedByDescending { it.durationSec ?: 0.0 }
-            DURATION_ASC -> tracks.sortedBy { it.durationSec ?: 0.0 }
-            TITLE_ASC -> tracks.sortedBy { it.title.lowercase() }
-            TITLE_DESC -> tracks.sortedByDescending { it.title.lowercase() }
-            SIZE_DESC -> tracks.sortedByDescending { it.audioBytes ?: 0L }
-            SIZE_ASC -> tracks.sortedBy { it.audioBytes ?: 0L }
+        /**
+         * 按 [field] + 方向排序；手动方式原样返回，交给拖动顺序。
+         *
+         * 「时间」把没记录时间（addedAtMs<=0）的条目固定排在末尾，不随方向翻到最前面。
+         */
+        fun apply(field: SortField, ascending: Boolean, tracks: List<TrackEntity>): List<TrackEntity> {
+            if (field == MANUAL) return tracks
+            val cmp: Comparator<TrackEntity> = when (field) {
+                TIME -> compareBy { it.addedAtMs }
+                DURATION -> compareBy { it.durationSec ?: 0.0 }
+                NAME -> compareBy { it.title.lowercase() }
+                FILE, MANUAL -> compareBy { it.audioBytes ?: 0L }
+            }
+            val sorted = if (ascending) tracks.sortedWith(cmp) else tracks.sortedWith(cmp.reversed())
+            // sortedBy 是稳定排序，等价于把「时间未记录」的条目挪到末尾。
+            return if (field == TIME) sorted.sortedBy { it.addedAtMs <= 0 } else sorted
+        }
+    }
+}
+
+/**
+ * 排序按钮：「字段 + 方向箭头 | 下拉箭头」两段式，外面套一个和旁边「导入」等高的圆角框。
+ *
+ * - 点左边主体：当前字段正序/倒序互换（手动模式没有方向，只弹提示）。
+ * - 点右侧箭头：展开字段下拉（文件/手动/时间/时长/名称）。
+ */
+@Composable
+private fun SortChip(
+    field: SortField,
+    ascending: Boolean,
+    onToggleDirection: () -> Unit,
+    onPickField: (SortField) -> Unit,
+) {
+    var menu by remember { mutableStateOf(false) }
+    // 和旁边的「云端同步」「导入」保持同一套外观：透明底 + outline 描边 + 12dp 圆角 + 32dp 高。
+    val shape = RoundedCornerShape(12.dp)
+    Box {
+        Row(
+            Modifier.height(32.dp).clip(shape)
+                .border(1.dp, MaterialTheme.colorScheme.outline, shape),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // 左半段：点一下翻转正/倒序。
+            Row(
+                Modifier.fillMaxHeight().clickable(onClick = onToggleDirection)
+                    .padding(start = 9.dp, end = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.Sort, null, Modifier.size(15.dp),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(field.label, style = MaterialTheme.typography.labelLarge)
+                if (field != SortField.MANUAL) {
+                    Spacer(Modifier.width(2.dp))
+                    Icon(
+                        if (ascending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
+                        if (ascending) "正序" else "倒序",
+                        Modifier.size(13.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+            // 右半段：点一下展开字段下拉。
+            Box(
+                Modifier.fillMaxHeight().width(24.dp).clickable { menu = true },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Default.ArrowDropDown, "选择排序字段", Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        }
+        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            SortField.entries.forEach { f ->
+                DropdownMenuItem(
+                    text = { Text(if (f == field) "${f.label}（当前）" else f.label) },
+                    onClick = { onPickField(f); menu = false },
+                    trailingIcon = {
+                        if (f == field) {
+                            Icon(
+                                Icons.Default.Check, null, Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    },
+                )
+            }
         }
     }
 }
@@ -178,8 +261,9 @@ fun LibraryScreenV2(openCategories: Boolean = false) {
     val categoryTracks by db.trackDao().inCategory(categoryId ?: -1L).collectAsState(initial = emptyList())
     val visibleTracks = if (section == 0) allTracks else categoryTracks
     // 「排序」按钮循环切换的顺序：手动 → 时间 → 时长 → 名称 → 文件大小，各带升/降两向。
-    var sortMode by remember { mutableStateOf(LibrarySort.MANUAL) }
-    val displayTracks = remember(allTracks, sortMode) { LibrarySort.apply(sortMode, allTracks) }
+    var sortField by remember { mutableStateOf(SortField.MANUAL) }
+    var sortAsc by remember { mutableStateOf(false) }
+    val displayTracks = remember(allTracks, sortField, sortAsc) { SortField.apply(sortField, sortAsc, allTracks) }
     LaunchedEffect(visibleTracks, selecting) {
         if (selecting) batchIds = batchIds.intersect(visibleTracks.map { it.id }.toSet())
     }
@@ -336,13 +420,25 @@ fun LibraryScreenV2(openCategories: Boolean = false) {
                         }
                     }
                     Spacer(Modifier.weight(1f))
-                    // 排序：点一下换下一种方式，循环走完回到「手动排序」（手动才能长按拖动）。
-                    AssistChip(
-                        onClick = { sortMode = sortMode.next(); notice = "排序：" + sortMode.full },
-                        label = { Text(sortMode.label, style = MaterialTheme.typography.labelLarge) },
-                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.Sort, null, Modifier.size(16.dp)) },
-                        shape = RoundedCornerShape(12.dp),
+                    // 排序：主体点一下翻转正/倒序，右侧小箭头点开字段下拉（手动才能长按拖动）。
+                    SortChip(
+                        field = sortField,
+                        ascending = sortAsc,
+                        onToggleDirection = {
+                            if (sortField == SortField.MANUAL) {
+                                notice = "手动顺序：长按条目上下拖动即可调整"
+                            } else {
+                                sortAsc = !sortAsc
+                                notice = "排序：" + sortField.describe(sortAsc)
+                            }
+                        },
+                        onPickField = { f ->
+                            sortField = f
+                            sortAsc = f.defaultAsc
+                            notice = "排序：" + f.describe(sortAsc)
+                        },
                     )
+                    Spacer(Modifier.width(10.dp))
                     // 导入本地视频：把系统文件选择器里选中的视频复制进库，靠最右侧。
                     AssistChip(
                         onClick = { importLauncher.launch(arrayOf("video/*")) },
@@ -358,7 +454,7 @@ fun LibraryScreenV2(openCategories: Boolean = false) {
                 if (allTracks.isEmpty()) EmptyLibrary()
                 else LibraryTrackList(
                     tracks = displayTracks,
-                    dragEnabled = sortMode == LibrarySort.MANUAL,
+                    dragEnabled = sortField == SortField.MANUAL,
                     selecting = selecting,
                     batchIds = batchIds,
                     deleting = deleting,
@@ -882,7 +978,7 @@ private fun LibraryAudioRow(track: TrackEntity, onPlay: () -> Unit, onMore: () -
         modifier
             .fillMaxWidth()
             .then(dragModifier)
-            .padding(horizontal = 12.dp, vertical = 3.dp)
+            .padding(horizontal = 8.dp, vertical = 3.dp)
             .clip(shape)
             .background(if (highlighted) uiAccentContainer() else uiCardColor())
             .border(
@@ -890,7 +986,7 @@ private fun LibraryAudioRow(track: TrackEntity, onPlay: () -> Unit, onMore: () -
                 if (highlighted) MaterialTheme.colorScheme.primary.copy(alpha = 0.35f) else uiHairline(),
                 shape,
             )
-            .padding(start = 4.dp, end = 2.dp, top = 9.dp, bottom = 9.dp),
+            .padding(start = 0.dp, end = 2.dp, top = 9.dp, bottom = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // 长按整行 = 拖动排序（由外层的 dragModifier 处理），所以这里不再挂 onLongClick；
@@ -905,22 +1001,24 @@ private fun LibraryAudioRow(track: TrackEntity, onPlay: () -> Unit, onMore: () -
             verticalAlignment = Alignment.CenterVertically,
         ) {
         if (number > 0 && !selecting) {
+            // 序号贴最左边，后面的缩略图紧跟着它；宽度只给单位数留一点余量，两位数自然撑开。
             Text(
                 "$number",
-                Modifier.width(20.dp),
-                textAlign = TextAlign.End,
+                Modifier.widthIn(min = 8.dp),
+                textAlign = TextAlign.Start,
                 maxLines = 1,
-                style = MaterialTheme.typography.labelMedium,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Medium,
                 color = uiMuted(),
             )
-            Spacer(Modifier.width(4.dp))
+            Spacer(Modifier.width(2.dp))
         }
         if (selecting) {
             Checkbox(checked = selected, enabled = selectionEnabled, onCheckedChange = { onSelect() })
             Spacer(Modifier.width(4.dp))
         }
         TrackCover(track)
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(8.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 track.title,
