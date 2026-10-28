@@ -314,23 +314,56 @@ class DirectExtractor(
     private suspend fun download(urls: List<String>, dest: File, referer: String) {
         var last: Exception? = null
         for ((index, url) in urls.withIndex()) {
-            try {
-                client.newCall(Request.Builder().url(url).header("User-Agent", BROWSER_UA)
-                    .header("Referer", referer).build()).execute().use { response ->
-                    report("媒体下载 ${index + 1}/${urls.size}：HTTP ${response.code}")
-                    require(response.isSuccessful) { "下载失败：HTTP ${response.code}" }
-                    dest.outputStream().use { out ->
-                        response.body?.byteStream()?.copyTo(out) ?: error("下载内容为空")
+            // CDN 常常在响应头之后直接 RST，Android 上表现为 "Software caused connection abort"。
+            // 换一条连接重来通常立刻就好，所以每个地址先自留两次重试，全部用完再换下一个地址。
+            for (attempt in 0..2) {
+                var received = 0L
+                try {
+                    val request = Request.Builder().url(url).header("User-Agent", BROWSER_UA)
+                        .header("Referer", referer)
+                        .header("Accept-Encoding", "identity")
+                        .header("Connection", "close")
+                        .build()
+                    client.newCall(request).execute().use { response ->
+                        report("媒体下载 ${index + 1}/${urls.size}${if (attempt == 0) "" else " 第 ${attempt + 1} 次"}：HTTP ${response.code}")
+                        require(response.isSuccessful) { "下载失败：HTTP ${response.code}" }
+                        dest.outputStream().use { out ->
+                            val body = response.body ?: error("下载内容为空")
+                            val input = body.byteStream()
+                            val buffer = ByteArray(64 * 1024)
+                            while (true) {
+                                val count = input.read(buffer)
+                                if (count < 0) break
+                                out.write(buffer, 0, count)
+                                received += count
+                            }
+                        }
                     }
+                    require(dest.length() > 1024) { "下载内容过小" }
+                    if (attempt > 0) report("媒体下载 ${index + 1}/${urls.size}：重试成功，${dest.length()} 字节")
+                    return
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (e: Exception) {
+                    last = e
+                    report("媒体下载 ${index + 1}/${urls.size}：${failureKind(e)}（已收 $received 字节）")
+                    dest.delete()
+                    if (attempt == 2 || e !is java.io.IOException) break
+                    delay(400L * (attempt + 1))
                 }
-                require(dest.length() > 1024) { "下载内容过小" }
-                return
-            } catch (e: Exception) {
-                last = e
-                report("媒体下载 ${index + 1}/${urls.size}：${failureKind(e)}")
             }
         }
-        throw IllegalStateException("所有下载地址均失败：${last?.message}", last)
+        throw IllegalStateException("所有下载地址均失败：${describeFailure(last)}", last)
+    }
+
+    /** 给用户看的中文原因；原始异常类型和 message 已由失败报告带到服务器。 */
+    private fun describeFailure(error: Throwable?): String = when (error) {
+        null -> "未知错误"
+        is java.net.SocketTimeoutException -> "下载超时"
+        is java.net.SocketException -> "网络连接被中断"
+        is java.io.EOFException -> "下载中断"
+        is java.io.IOException -> "网络读写失败（${error.javaClass.simpleName}）"
+        else -> error.message ?: error.javaClass.simpleName
     }
 
     private fun duration(file: File): Double? = runCatching {

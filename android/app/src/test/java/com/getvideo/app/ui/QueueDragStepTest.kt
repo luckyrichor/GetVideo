@@ -158,4 +158,56 @@ class QueueDragStepTest {
     fun emptySlotsAreIgnored() {
         assertNull(dropTarget(0, 100f, emptyList(), 2f))
     }
+
+    /**
+     * 真机上「第一个往下拖立刻跳到最后」的真正原因：LazyColumn 换位时会把第一个可见项
+     * 钉在原来的像素上，槽位坐标整体平移。判定如果直接用屏幕坐标，就会每帧再往后换一格。
+     * 这里用「锚定模型」跑：换位后被拖行始终排在第 0 个槽位。
+     */
+    private class AnchoredSim(val count: Int = 10, val visible: Int = 6) {
+        var index = 0
+        var residual = 0f
+        var moves = 0
+        fun slots(): List<QueueSlot> = (0 until minOf(visible, count - index)).map { i ->
+            QueueSlot(index + i, i * 110f, 100f)
+        }
+        fun frame(dy: Float) {
+            residual += dy
+            val slots = slots()
+            val me = slots.first { it.index == index }
+            val y = me.top + me.height / 2f + residual
+            val target = dropTarget(index, y, slots, 2f) ?: return
+            val targetSlot = slots.first { it.index == target }
+            index = target
+            // 与实现一致：换位后保留手指在新一行里的相对位置。
+            residual = y - (targetSlot.top + targetSlot.height / 2f)
+            moves++
+        }
+    }
+
+    @Test
+    fun anchorShiftDoesNotChainJumpPastTheFinger() {
+        val sim = AnchoredSim()
+        // 手指只往下走了一行多一点（4 帧 × 33px），最终只该挪一格。
+        repeat(4) { sim.frame(33f) }
+        assertEquals(1, sim.index)
+        assertEquals(1, sim.moves)
+    }
+
+    @Test
+    fun anchorShiftDoesNotMoveWhenTheFingerIsStill() {
+        val sim = AnchoredSim()
+        repeat(60) { sim.frame(0f) }
+        assertEquals(0, sim.index)
+        assertEquals(0, sim.moves)
+    }
+
+    @Test
+    fun anchoredDragDownMovesOneRowPerFingerRow() {
+        val sim = AnchoredSim()
+        // 手指一共走了 5 行（5 × 110px），每次只能挪一格，绝不允许连跳。
+        repeat(25) { sim.frame(22f) }
+        assertEquals(5, sim.index)
+        assertEquals(5, sim.moves)
+    }
 }

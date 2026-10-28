@@ -79,6 +79,8 @@ internal fun ReorderableQueue(
     // 被拖行中心的屏幕坐标（相对列表视口），只随手指变化。
     var dragCenter by remember { mutableFloatStateOf(0f) }
     var dragHeight by remember { mutableFloatStateOf(0f) }
+    // 自上次换位以来手指走了多少（正 = 往下）。换位后清零，判定就不会被列表锚点平移带跑。
+    var residual by remember { mutableFloatStateOf(0f) }
     var boxHeight by remember { mutableIntStateOf(0) }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -89,9 +91,10 @@ internal fun ReorderableQueue(
     // 不然拖动中任何一次无关的队列刷新都会把手指下的行弹回原位。
     LaunchedEffect(queue) { if (draggedId == null) draft = queue }
 
-    fun move(from: Int, to: Int) {
-        if (from !in draft.indices || to !in draft.indices || from == to) return
+    fun move(from: Int, to: Int): Boolean {
+        if (from !in draft.indices || to !in draft.indices || from == to) return false
         draft = draft.toMutableList().apply { add(to, removeAt(from)) }
+        return true
     }
     fun saveOrder(items: List<PlayerHolder.QueueItem>) {
         if (saving) return
@@ -110,6 +113,7 @@ internal fun ReorderableQueue(
         draggedId = key
         dragCenter = info.offset + info.size / 2f
         dragHeight = info.size.toFloat()
+        residual = 0f
         error = null
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
     }
@@ -118,7 +122,7 @@ internal fun ReorderableQueue(
         draggedId = null
         if (moved) saveOrder(draft)
     }
-    fun cancelDrag() { draggedId = null; draft = latestQueue }
+    fun cancelDrag() { draggedId = null; residual = 0f; draft = latestQueue }
 
     // 拖动期间每一帧：先按贴边程度滚列表，再按「手指落在哪一行」落位。
     LaunchedEffect(draggedId) {
@@ -137,14 +141,28 @@ internal fun ReorderableQueue(
                     (((dragCenter - bottom + edge) / edge).coerceIn(0f, 1f)) * maxSpeed
                 else -> 0f
             }
-            if (speed != 0f) state.scrollBy(speed)
+            if (speed != 0f) {
+                state.scrollBy(speed)
+                // 内容往上滚 = 手指相对内容往下走，等价于手指位移，记账给判定用。
+                residual += speed
+            }
             val from = draft.indexOfFirst { it.track.id == id }
             if (from < 0) break
             val slots = layout.visibleItemsInfo.map {
                 QueueSlot(it.index, it.offset.toFloat(), it.size.toFloat())
             }
-            val target = dropTarget(from, dragCenter, slots, inset) ?: continue
-            move(from, target)
+            // 判定基准 = 被拖行**当前槽位**的中心 + 自上次换位以来的手指位移。
+            // 不能直接用 dragCenter：换位时 LazyColumn 会把「第一个可见项」钉在原像素上，
+            // 槽位坐标整体平移，dragCenter 会指到别的行上，于是每帧再换一格，一路窜到列表尾部。
+            val slot = slots.firstOrNull { it.index == from } ?: continue
+            val y = slot.top + slot.height / 2f + residual
+            val target = dropTarget(from, y, slots, inset) ?: continue
+            // 换位后保留「手指在这一行里的偏移」，下一次换位才不用重新走满一行；
+            // 又不能保留绝对值 —— 锚点平移后槽位坐标已经变了。
+            val targetSlot = slots.firstOrNull { it.index == target }
+            if (move(from, target)) {
+                residual = if (targetSlot != null) y - (targetSlot.top + targetSlot.height / 2f) else 0f
+            }
         }
     }
 
@@ -178,6 +196,7 @@ internal fun ReorderableQueue(
                             change.consume()
                             // 只挪手指位置，换位交给每帧的循环做，一次事件里绝不连跳好几格。
                             dragCenter += amount.y
+                            residual += amount.y
                         }
                     },
                     onDragEnd = { endDrag() },

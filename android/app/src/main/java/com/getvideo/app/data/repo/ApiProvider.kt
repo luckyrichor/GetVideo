@@ -111,6 +111,9 @@ object ApiProvider {
         is java.net.ConnectException -> if (t.message.orEmpty().contains("127.0.0.1"))
             "tx 调试通道未连接，请连接 Mac 并恢复 USB 转发，或在服务器设置中填写手机可访问的地址"
         else "无法连接服务器，请检查服务器地址和服务状态"
+        is java.net.SocketException -> "网络连接被中断，请重试"
+        is java.io.EOFException -> "下载中断，请重试"
+        is javax.net.ssl.SSLException -> "安全连接失败，请检查网络或稍后重试"
         else -> t.message ?: "未知错误"
     }
 }

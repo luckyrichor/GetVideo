@@ -74,6 +74,29 @@ internal fun dropTarget(from: Int, y: Float, slots: List<QueueSlot>, inset: Floa
 - 快速甩动时 Compose 把拖动事件按帧合并，极端速度下可能少换一格，松手前补拖即可。
 - 顺序保存失败会提示「排序未保存，请重试」，并把草稿恢复成播放器里的真实顺序。
 
+### 0.3.8：视频库「手动排序」也换成同一套
+
+队列修好了，但用户说的「第一条往下拖立刻跳到最后」其实发生在**视频库页面的手动排序**（`LibraryTrackList`），
+不是播放队列面板。两处症状同源，代码却是各写一套：
+
+| 层 | 0.3.7 及以前 | 0.3.8 |
+|---|---|---|
+| 被拖行 | 留在列表里，靠 `translationY = center - slot.offset - size/2` 补偿 | 移出列表画浮层，原位留等高 `Spacer`（与队列一致） |
+| 落点判定 | 直接用屏幕坐标 `center` 找「包住它的那一行」 | `dropTarget(from, slot.top + size/2 + residual, slots, inset)` |
+| 换位后的记账 | 无，`center` 是绝对值 | `residual = y - targetSlot中心`，只留「手指落在新一行里的偏移」 |
+
+`LazyColumn` 换位时会把**第一个可见项钉在原来的像素上**，槽位坐标整体平移；继续拿屏幕绝对值判断，
+就会每帧指到后面几行，首条一路窜到末尾。判定基准改成「被拖行当前槽位中心 + 自上次换位以来的手指位移」后，
+单测里的锚定模型（`AnchoredSim`：换位后被拖行始终排在第 0 个槽位）不再连跳。
+
+移植时又发现第二个问题：手势原本挂在**每一行**的 `pointerInput` 上，而拖动一开始这一行就被换成 `Spacer`
+离屏，手势节点跟着销毁 —— 第一次换位后拖动就断了（真机表现是「拖一下就自己停下」）。
+所以检测器改挂在 `LazyColumn` 上，`onDragStart` 里用 `visibleItemsInfo` 命中最近的一行，
+这样换位多少次手势都还在。
+
+`QueueDragStepTest` 从 8 项加到 11 项：首条下拖 4×33px 只挪一格、手指不动 40 帧不再换位、
+连续 25×22px 一步一格共 5 格（与 GetAudio 同源）。
+
 ## 三、内置壁纸：13 张静态 + 3 张动图 + 3 段视频
 
 素材随 APK 打包在 `assets/backgrounds/`，选中即用：不联网、不申请相册权限、不受文件被删影响。
@@ -167,10 +190,13 @@ App 不联网、不读 Steam 目录、不解析 pkg，只接受系统文件选�
 
 | 项 | GetAudio | GetVideo |
 |---|---|---|
-| 单测 | 92 项通过（8 项拖动判定 + 9 项取景几何） | 79 项通过（同样 8 + 9） |
-| Lint | 0 errors / 28 warnings | 0 errors / 26 warnings |
+| 单测 | 95 项通过（11 项拖动判定 + 9 项取景几何） | 82 项通过（11 项拖动判定） |
+| Lint | 0 errors / 27 warnings | 0 errors / 25 warnings |
 | 构建 | debug + release 成功 | debug + release 成功 |
-| APK | 32.7 MB（壁纸升到 2200 后 +5 MB） | 同量级 |
+| APK | 32.8 MB（壁纸升到 2200 后 +5 MB） | 32.8 MB |
+
+真机（GetAudio 0.9.8，1440×3200 / Android 14）：`input draganddrop` 长按拖动库页首条只移动一格（1→2），
+重启进程后顺序保持。GetVideo 本轮未装真机，拖动为同一份代码。
 
 **仍未验收**：30 条真实队列下的拖动手感（判定逻辑已在单测模型覆盖，手机上缺 30 条数据）、
 取景页在真实原图上的手感（尤其 90° 旋转后的平移边界）、视频背景与音频同时播放的听感、

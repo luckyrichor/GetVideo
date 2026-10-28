@@ -51,9 +51,11 @@ AI worker：在已配置服务器 Ark 凭据的环境运行 `.venv/bin/python -m
 
 ### 当前进度与本次交付
 
+- 2026-10-28 完成 0.3.8（versionCode 15）：与 GetAudio 0.9.8 同步。① **库页手动排序拖动**（`LibraryScreenV2.LibraryTrackList`）改用与队列相同的模型：被拖行移出列表画浮层、原位留等高 `Spacer`，落点 `dropTarget(from, 槽位中心 + residual, slots, inset)`，换位后只保留「手指落在新一行里的偏移」，修「第一条往下拖立刻跳到最后」；同时把检测器从每行 `pointerInput` 挪到 `LazyColumn`（行被换成 `Spacer` 时节点会销毁，拖动第一次换位后就断）。② **下载失败自动上报**：`TrackRepository.download()` 失败时把阶段、HTTP、已收字节、期望字节、耗时、主机、异常写入 `failure-outbox` 并唤醒 `FailureReportWorker`，同视频同错误 10 分钟内只报一次。③ **媒体下载抗断流**：`DirectExtractor.download()` 每地址最多 3 次（仅 `IOException`，400/800ms 退避），带 `Connection: close` + `Accept-Encoding: identity`；`ApiProvider.humanMessage` 补 `SocketException / EOFException / SSLException` 中文映射。验证：82 项单测（11 项拖动判定）、Lint 0 errors / 25 warnings、debug+release 构建成功，产物 0.3.8 (15)。GetAudio 侧已真机验证首条下拖只走一格且重启后顺序保持；GetVideo 未装真机复验。
 - 2026-10-28 完成 0.3.7（versionCode 14）：0.3.6 的拖动仍被用户判为坏的（首条下拖瞬间到 26–30 条、第 26 条上拖疯狂抖动且推不上去、拖着拖着停下）。根因两条：被拖行留在列表里靠 `translationY` 补偿，补偿按上一帧槽位算，换位那一帧必然错位 → 抖动；中心被夹在可视区后判定退化成「见谁换谁」→ 一帧一格连换。现在被拖行移出列表画在浮层（原位放等高 `Spacer` 占位），落点改为「手指所在行」且只从 `visibleItemsInfo` 里选（`dropTarget()` 纯函数，8 项单测），贴边滚动只滚列表不回写手指。同时外观页新增「显示区域 → 调整显示区域」：9:19.5 选框 + 旋转 90° + 双指缩放 + 单指平移 + 整张/铺满/复位，几何在 `data/repo/WallpaperFrame.kt`，每张背景单独记忆；静态壁纸由长边 1280 重出为 2200。详见 docs/queue-drag-and-motion-background.md。
 - 2026-10-28 完成 0.3.6（versionCode 13）：拖动返工 —— 0.3.5 把贴边滚动的像素补进被拖行中心，首条下拖会窜到末条、末条上拖剧烈抖动；现在中心只跟手指走、判定夹在可视区内、只和紧邻上下行比且一次只挪一格，判定抽成纯函数 `reorderStep()` 并补 6 项单测。同时内置 13 张静态壁纸 + 3 张动图 + 3 段视频（全部静音，随 APK 打包），外观页两排缩略图可点选。详见 docs/queue-drag-and-motion-background.md。
 - 2026-10-28 完成 0.3.5（versionCode 12）：播放列表去掉行首拖动把手，改为长按整行拖动；重写落点判定与贴边自动滚动，修「第一个条目往下拖会抖」和「拖出视口后停止重排」；外观页新增动态背景，支持 mp4/webm 视频与 GIF/WebP 动图，静音循环、不抢音频焦点、跟随生命周期暂停。详见 docs/queue-drag-and-motion-background.md。
+- 验证（0.3.8）：82 项 Android 单测通过（11 项拖动判定），Lint 0 errors / 25 warnings，debug/release 构建成功，产物为 0.3.8 (15)。GetVideo 本轮未装真机；同源的 GetAudio 0.9.8 已在 1440×3200 / Android 14 上验证：库页首条下拖只移动一格、进程重启后顺序保持。本轮未改服务端，未部署。
 - 验证（0.3.7）：79 项 Android 单测通过（8 项拖动判定 + 9 项取景几何），Lint 0 errors / 26 warnings，debug/release 构建成功，产物为 0.3.7 (14)。真机 UI 只在 0.3.6 时期验过（两排缩略图正常、视频与动画 WebP 可播放）；0.3.7 交付时手机锁屏，拖动与取景页未做真机复验。本轮未改服务端，未部署。
 - 2026-10-27 已从 origin/main 快进同步至 GetVideo@27323ae；业务代码未自行改写，没有提交或推送新代码。Android 回归发现 TrackEntity 新增 coverUrl 后两个旧测试夹具的位置参数错位，已在 SyncMergeTest.kt / QueueRulesTest.kt 改为命名参数，测试修正尚未提交。
 - Android 当前版本为 0.3.0（versionCode 7）；新增批量提取、自定义背景、只看背景及卡片不透明度调节来自已有仓库提交。本轮只同步、验证、构建和分发。
@@ -78,6 +80,8 @@ AI worker：在已配置服务器 Ark 凭据的环境运行 `.venv/bin/python -m
 飞书待同步：2026-10-27，GetVideo@27323ae 最新代码同步、测试、APK 构建与交付记录。本会话尚未取得首次发布此范围的明确确认，需先说明标题、目录和 codex 用户身份。拟复用「我的文档库/GetVideo」，新建「GetVideo 项目概览」「GetVideo 开发记录」，不新增目录层级；未经确认不写入。文档链接在实际创建并回查后补充，不编造链接。
 
 ### 更新日志
+
+- 2026-10-28：0.3.8（code 15）。库页手动排序拖动改为与队列同一套（浮层 + 等高占位 + `residual` 记账，手势挂到 `LazyColumn`），修首条下拖跳到最后与拖动中断；下载失败接入失败报告队列并唤醒上传，媒体下载按地址重试 3 次并记已收字节。82 项单测、Lint 0 errors 通过。
 
 - 2026-10-28：0.3.7（code 14）。拖动第三次返工：被拖行改走浮层、落点改为「手指所在行」且只从可视行里选，修首条下拖窜到 26–30 条与上拖抖动；新增壁纸「调整显示区域」（旋转/缩放/选框）；静态壁纸重出 2200 长边。79 项单测、Lint 0 errors 通过。
 

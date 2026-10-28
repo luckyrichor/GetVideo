@@ -2,6 +2,7 @@ package com.getvideo.app.data.repo
 
 import android.content.Context
 import android.net.Uri
+import android.os.SystemClock
 import android.provider.OpenableColumns
 import androidx.room.withTransaction
 import com.getvideo.app.player.PlayerHolder
@@ -18,12 +19,18 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.security.MessageDigest
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
 import java.io.File
 
 class TrackRepository(private val context: Context) {
 
-    companion object { internal val fileMutex = Mutex() }
+    companion object {
+        internal val fileMutex = Mutex()
+        /** 进程内下载失败去重：报告键 → 上次上报的 elapsedRealtime。 */
+        private val reported = LinkedHashMap<String, Long>()
+        private val reportedLock = Any()
+    }
 
     private val db = AppDatabase.get(context)
     private val trackDao = db.trackDao()
@@ -213,53 +220,126 @@ class TrackRepository(private val context: Context) {
     fun localFile(id: Long): File = File(audioDir, "$id.mp4")
 
     /** 下载单条视频到本地。已经有了就直接返回。 */
-    suspend fun download(track: TrackEntity): Result<File> = runCatching {
-        withContext(Dispatchers.IO) { fileMutex.withLock {
-            val current = trackDao.byId(track.id) ?: error("视频已被移除，请重新同步")
-            val dest = current.localPath?.let(::File) ?: localFile(track.id)
-            if (current.localPath == dest.absolutePath && dest.exists() && dest.length() > 0) {
-                if (track.localPath == null) trackDao.setLocalPath(track.id, dest.absolutePath)
-                return@withLock dest
-            }
-            if (current.locallyEdited) error("本地剪辑文件已丢失，请恢复原版或重新剪辑")
-            if (track.id < 0) error("本机视频文件已丢失，请重新提取")
-
-            val account = AccountStore.forServer(settings.serverUrlNow()) ?: error("请先登录 GetVideo 账号")
-            check(current.cloudScope == cloudScopeKey(account.serverUrl, account.userId)) { "旧视频没有可确认的服务器归属，请重新提取" }
-            val base = account.serverUrl.trimEnd('/')
-            val url = base + current.downloadUrl
-            val request = Request.Builder().url(url).build()
-
-            // 先写临时文件，完整了再改名 —— 中断的下载不会留下半个能播的文件
-            val tmp = File(dest.absolutePath + ".part")
-            ApiProvider.okHttp(account).newCall(request).execute().use { resp ->
-                if (!resp.isSuccessful) error("下载失败：HTTP ${resp.code}")
-                val body = resp.body ?: error("下载失败：响应为空")
-                tmp.outputStream().use { out -> body.byteStream().copyTo(out) }
-            }
-            val digest = MessageDigest.getInstance("SHA-256")
-            tmp.inputStream().use { input ->
-                val buffer = ByteArray(65536)
-                while (true) {
-                    val count = input.read(buffer)
-                    if (count < 0) break
-                    digest.update(buffer, 0, count)
+    suspend fun download(track: TrackEntity): Result<File> {
+        // 失败时要能说清停在哪一步、收了多少字节 —— 断流类错误只看异常名无法定位。
+        val startedAt = SystemClock.elapsedRealtime()
+        var stage = "读取本地记录"
+        var received = 0L
+        var status = 0
+        val result = runCatching {
+            withContext(Dispatchers.IO) { fileMutex.withLock {
+                val current = trackDao.byId(track.id) ?: error("视频已被移除，请重新同步")
+                val dest = current.localPath?.let(::File) ?: localFile(track.id)
+                if (current.localPath == dest.absolutePath && dest.exists() && dest.length() > 0) {
+                    if (track.localPath == null) trackDao.setLocalPath(track.id, dest.absolutePath)
+                    return@withLock dest
                 }
+                if (current.locallyEdited) error("本地剪辑文件已丢失，请恢复原版或重新剪辑")
+                if (track.id < 0) error("本机视频文件已丢失，请重新提取")
+
+                stage = "确认账号与归属"
+                val account = AccountStore.forServer(settings.serverUrlNow()) ?: error("请先登录 GetVideo 账号")
+                check(current.cloudScope == cloudScopeKey(account.serverUrl, account.userId)) { "旧视频没有可确认的服务器归属，请重新提取" }
+                val base = account.serverUrl.trimEnd('/')
+                val url = base + current.downloadUrl
+                val request = Request.Builder().url(url).build()
+
+                // 先写临时文件，完整了再改名 —— 中断的下载不会留下半个能播的文件
+                val tmp = File(dest.absolutePath + ".part")
+                stage = "请求服务器"
+                ApiProvider.okHttp(account).newCall(request).execute().use { resp ->
+                    status = resp.code
+                    if (!resp.isSuccessful) error("下载失败：HTTP ${resp.code}")
+                    val body = resp.body ?: error("下载失败：响应为空")
+                    stage = "写入临时文件"
+                    tmp.outputStream().use { out ->
+                        val input = body.byteStream()
+                        val buffer = ByteArray(65536)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            out.write(buffer, 0, count)
+                            received += count
+                        }
+                    }
+                }
+                stage = "校验文件"
+                val digest = MessageDigest.getInstance("SHA-256")
+                tmp.inputStream().use { input ->
+                    val buffer = ByteArray(65536)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        digest.update(buffer, 0, count)
+                    }
+                }
+                val actualHash = digest.digest().joinToString("") { "%02x".format(it) }
+                if ((current.audioBytes != null && tmp.length() != current.audioBytes) ||
+                    (current.audioSha256 != null && actualHash != current.audioSha256)) {
+                    tmp.delete()
+                    error("视频内容已变更或下载不完整，请同步后重试")
+                }
+                stage = "保存文件"
+                checkAccount(account)
+                if (!tmp.renameTo(dest)) {
+                    tmp.delete()
+                    error("保存失败")
+                }
+                trackDao.setLocalPath(track.id, dest.absolutePath)
+                dest
+            } }
+        }
+        result.exceptionOrNull()?.let { error ->
+            if (error !is kotlinx.coroutines.CancellationException) {
+                reportDownloadFailure(track, stage, error, startedAt, received, status)
             }
-            val actualHash = digest.digest().joinToString("") { "%02x".format(it) }
-            if ((current.audioBytes != null && tmp.length() != current.audioBytes) ||
-                (current.audioSha256 != null && actualHash != current.audioSha256)) {
-                tmp.delete()
-                error("视频内容已变更或下载不完整，请同步后重试")
-            }
-            checkAccount(account)
-            if (!tmp.renameTo(dest)) {
-                tmp.delete()
-                error("保存失败")
-            }
-            trackDao.setLocalPath(track.id, dest.absolutePath)
-            dest
-        } }
+        }
+        return result
+    }
+
+    /**
+     * 下载失败也进失败报告队列，和提取失败同一条链路：本机暂存 → WorkManager 唤醒 → 服务器入库。
+     *
+     * 手动下载、批量加入播放列表、播放前缓存都会走到 [download]，任一处断流都能留下证据。
+     * 同一视频的同类错误 10 分钟内只报一次，离线反复重试不会把队列刷满。
+     */
+    private suspend fun reportDownloadFailure(
+        track: TrackEntity, stage: String, error: Throwable,
+        startedAt: Long, received: Long, status: Int,
+    ) {
+        val hint = ApiProvider.humanMessage(error)
+        val key = "${track.id}|${error.javaClass.simpleName}|$hint"
+        synchronized(reportedLock) {
+            val now = SystemClock.elapsedRealtime()
+            reported.entries.removeAll { now - it.value > 10 * 60_000L }
+            if (reported.containsKey(key) || reported.size >= 30) return
+            reported[key] = now
+        }
+        withContext(NonCancellable + Dispatchers.IO) {
+            runCatching {
+                val server = settings.serverUrlNow()
+                val owner = AccountStore.forServer(server)?.userId.orEmpty()
+                val host = track.downloadUrl.toHttpUrlOrNull()?.host.orEmpty()
+                val logs = listOf(
+                    "视频下载失败",
+                    "阶段：$stage",
+                    "视频：${track.title}（id=${track.id}）",
+                    "来源：${track.platform.ifBlank { "未知" }} · ${track.videoId.take(80).ifBlank { "-" }}",
+                    "主机：${host.ifBlank { "未知" }}",
+                    "HTTP：${if (status > 0) status.toString() else "未返回"}",
+                    "已接收：$received 字节 · 期望：${track.audioBytes?.toString() ?: "未知"} 字节",
+                    "耗时：${(SystemClock.elapsedRealtime() - startedAt) / 1000} 秒",
+                    "错误：${error.javaClass.simpleName} · ${error.message?.take(300) ?: "-"}",
+                    "提示：$hint",
+                )
+                FailureOutbox(File(context.filesDir, "failure-outbox")).enqueue(
+                    server, owner,
+                    track.sourceUrl.ifBlank { "视频下载失败：${track.title}（id=${track.id}）" },
+                    com.getvideo.app.BuildConfig.VERSION_NAME, logs,
+                )
+                com.getvideo.app.sync.FailureReportWorker.schedule(context)
+            }.onFailure { DiagnosticsStore.event("视频下载", "失败报告暂存失败", false) }
+        }
     }
 
     /** A stable snapshot prevents background server downloads from changing an open edit. */
