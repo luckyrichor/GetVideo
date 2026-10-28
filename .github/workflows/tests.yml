@@ -36,9 +36,19 @@ jobs:
           install_static() {
             curl -fsSL --retry 2 --max-time 300 -o /tmp/ffmpeg.tar.xz \
               https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz || return 1
-            sudo tar -xJf /tmp/ffmpeg.tar.xz -C /usr/local/bin \
-              --strip-components=1 --wildcards '*/ffmpeg' '*/ffprobe'
+            # 包里是 ffmpeg-xxx/bin/ffmpeg。别直接 --strip-components=1 解到 /usr/local/bin，
+            # 那样会落成 /usr/local/bin/bin/ffmpeg（2026-10-28 踩过：悄悄不在 PATH 里，冒烟测试
+            # 直接判失败然后退回 apt）。先摊到临时目录，再把二进制挑出来。
+            rm -rf /tmp/ffmpeg-x && mkdir -p /tmp/ffmpeg-x
+            tar -xJf /tmp/ffmpeg.tar.xz -C /tmp/ffmpeg-x || return 1
             rm -f /tmp/ffmpeg.tar.xz
+            local bin probe
+            bin=$(find /tmp/ffmpeg-x -type f -name ffmpeg | head -1)
+            probe=$(find /tmp/ffmpeg-x -type f -name ffprobe | head -1)
+            [ -n "$bin" ] || { echo "包里没有 ffmpeg 二进制"; return 1; }
+            sudo install -m 755 "$bin" /usr/local/bin/ffmpeg
+            if [ -n "$probe" ]; then sudo install -m 755 "$probe" /usr/local/bin/ffprobe; fi
+            rm -rf /tmp/ffmpeg-x
           }
           if command -v ffmpeg >/dev/null 2>&1 && chromaprint_ok; then
             echo "已有带 chromaprint 的 ffmpeg，跳过安装"; exit 0
