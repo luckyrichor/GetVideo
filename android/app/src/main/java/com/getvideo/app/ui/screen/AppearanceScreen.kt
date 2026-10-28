@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -34,23 +35,41 @@ import com.getvideo.app.ui.components.uiCardColor
 import com.getvideo.app.ui.components.uiMuted
 
 /**
- * 外观页：选一张图当整个 App 的背景，并调节压暗程度。
+ * 外观页：静态图、动态背景（视频/动图）与卡片不透明度。
  *
- * 图片只影响最底层，列表卡片和按钮仍然是不透明底色，所以不会影响点击和阅读。
+ * 背景只影响最底层，列表卡片和按钮仍然是不透明底色，所以不会影响点击和阅读。
  */
 @Composable
 fun AppearanceScreen() {
     val context = LocalContext.current
     val background by BackgroundStore.state.collectAsState()
+
+    fun takePersist(uri: android.net.Uri) {
+        runCatching {
+            context.contentResolver.takePersistableUriPermission(
+                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
+        }
+    }
+
     // 选择图片后立刻生效，并申请持久化读取权限，重启后仍然可用。
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            runCatching {
-                context.contentResolver.takePersistableUriPermission(
-                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                )
-            }
+            takePersist(uri)
             BackgroundStore.setImage(context, uri)
+        }
+    }
+    // 视频 / 动图同样申请持久化授权，重启后不用再选一次。
+    val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            takePersist(uri)
+            BackgroundStore.setMotion(context, uri, isVideo = true)
+        }
+    }
+    val gifPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            takePersist(uri)
+            BackgroundStore.setMotion(context, uri, isVideo = false)
         }
     }
 
@@ -88,6 +107,39 @@ fun AppearanceScreen() {
                 )
             }
         }
+
+        SectionTitle("动态背景")
+        SectionCard {
+            AppearanceRow(
+                Icons.Rounded.PlayArrow,
+                if (background.motionIsVideo) "更换背景视频" else "选择背景视频",
+                "mp4 / webm，静音循环播放，不打断正在播放的视频声音",
+            ) { videoPicker.launch(arrayOf("video/*")) }
+            RowDivider()
+            AppearanceRow(
+                Icons.Rounded.Image,
+                if (background.isMotion && !background.motionIsVideo) "更换背景动图" else "选择背景动图",
+                "GIF / WebP，循环播放",
+            ) { gifPicker.launch(arrayOf("image/gif", "image/webp")) }
+            if (background.isMotion) {
+                RowDivider()
+                SettingRow(
+                    Icons.Rounded.DeleteOutline,
+                    "关闭动态背景",
+                    tone = MaterialTheme.colorScheme.error,
+                    showChevron = false,
+                    onClick = { BackgroundStore.clearMotion(context) },
+                )
+            }
+        }
+        Text(
+            "壁纸引擎（Wallpaper Engine）：创意工坊里「视频」类型的壁纸就是一个 mp4/webm 文件，复制到手机后直接在上面选即可；" +
+                "「场景」类型是打包过的 scene.pkg，手机读不了，需要先在电脑上用壁纸引擎导出成视频，再选这里。",
+            Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp, bottom = 2.dp),
+            fontSize = 12.sp,
+            lineHeight = 18.sp,
+            color = uiMuted(),
+        )
 
         SectionTitle("卡片不透明度")
         SectionCard {

@@ -47,6 +47,18 @@ val LocalCardAlpha = compositionLocalOf { 0.58f }
 @Composable
 fun BackgroundLayer() {
     val state by BackgroundStore.state.collectAsState()
+    val motion = state.motionUri
+    if (motion != null) {
+        Box(Modifier.fillMaxSize()) {
+            MotionBackground(
+                uri = Uri.parse(motion),
+                isVideo = state.motionIsVideo,
+                modifier = Modifier.fillMaxSize(),
+            )
+            BackgroundScrim(state.scrim)
+        }
+        return
+    }
     val source = state.source
     if (source == null) {
         Box(Modifier.fillMaxSize().background(uiPageBackground()))
@@ -104,6 +116,12 @@ fun BackgroundPreview(background: AppearanceBackground, modifier: Modifier = Mod
     val state by BackgroundStore.state.collectAsState()
     Box(modifier.background(uiAccentContainer())) {
         val source = background.source
+        val motion = background.motionUri
+        if (motion != null) {
+            MotionBackground(Uri.parse(motion), background.motionIsVideo, Modifier.fillMaxSize())
+            BackgroundScrim(state.scrim)
+            return@Box
+        }
         if (source != null) {
             val painter = if (background.isAsset) assetPainter(source) else rememberAsyncImagePainter(model = Uri.parse(source))
             Image(painter, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)

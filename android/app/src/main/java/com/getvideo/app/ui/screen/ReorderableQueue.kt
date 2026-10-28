@@ -3,7 +3,6 @@ package com.getvideo.app.ui.screen
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.*
@@ -14,7 +13,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
@@ -44,10 +42,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 /**
- * 两种拖法都支持：
- *  - 直接按住左侧把手往上/下拖（和库列表一致，不用先长按）；
- *  - 长按任意一行再拖（可点面积大，好操作）。
- * 拖动只是本地预览，松手才落库；面板关闭或队列被外部改动时安全取消。
+ * 拖动排序：长按任意一行开始拖（不再单独放把手，2026-10-28 按用户要求去掉行首两道横线）。
+ *
+ * 落点判定以「被拖行中心越过目标行中线」为准，而不是碰到目标行就换位 ——
+ * 否则第一个条目往下拖时，换位后立刻又命中自己原来的位置，会来回抖。
+ * 中心拖出视口时取最近的边缘行，保证贴边自动滚动的同时继续重排。
  */
 @Composable
 internal fun ReorderableQueue(
@@ -73,12 +72,21 @@ internal fun ReorderableQueue(
 
     fun moveAtCenter() {
         val id = draggedId ?: return
-        val target = state.layoutInfo.visibleItemsInfo.firstOrNull {
-            it.key != id && center >= it.offset && center < it.offset + it.size
-        } ?: return
+        val others = state.layoutInfo.visibleItemsInfo.filter { it.key != id }
+        if (others.isEmpty()) return
         val from = draft.indexOfFirst { it.track.id == id }
+        if (from < 0) return
+        // 中心在视口内就取命中的行；拖出视口后取离中心最近的边缘行，保证滚动时仍在重排。
+        val target = others.firstOrNull { center >= it.offset && center < it.offset + it.size }
+            ?: others.minByOrNull { kotlin.math.abs(it.offset + it.size / 2f - center) }
+            ?: return
         val to = draft.indexOfFirst { it.track.id == target.key }
-        if (from >= 0 && to >= 0 && from != to) draft = draft.toMutableList().apply { add(to, removeAt(from)) }
+        if (to < 0 || to == from) return
+        // 越过目标行中线才换位，避免刚换过去又被判回来。
+        val mid = target.offset + target.size / 2f
+        val crossed = if (to > from) center > mid else center < mid
+        if (!crossed) return
+        draft = draft.toMutableList().apply { add(to, removeAt(from)) }
     }
     fun saveOrder(items: List<PlayerHolder.QueueItem>) {
         if (saving) return
@@ -117,14 +125,21 @@ internal fun ReorderableQueue(
         while (draggedId != null) {
             withFrameNanos { }
             val layout = state.layoutInfo
+            val top = layout.viewportStartOffset.toFloat()
+            val bottom = layout.viewportEndOffset.toFloat()
             val speed = when {
-                finger < layout.viewportStartOffset + edge ->
-                    -((layout.viewportStartOffset + edge - finger) / edge).coerceIn(0f, 1f) * 14f
-                finger > layout.viewportEndOffset - edge ->
-                    ((finger - layout.viewportEndOffset + edge) / edge).coerceIn(0f, 1f) * 14f
+                finger < top + edge -> -(((top + edge - finger) / edge).coerceIn(0f, 1f)) * 18f
+                finger > bottom - edge -> (((finger - bottom + edge) / edge).coerceIn(0f, 1f)) * 18f
                 else -> 0f
             }
-            if (speed != 0f) { state.scrollBy(speed); moveAtCenter() }
+            if (speed != 0f) {
+                val consumed = state.scrollBy(speed)
+                // 列表滚动了多少，被拖行在内容坐标里也要跟着走多少，
+                // 否则手指没动、条目却被列表甩开，落点判定会失真。
+                if (consumed != 0f) center += consumed
+            }
+            // 每帧都重新判定一次：贴边滚动时即使没有新的拖动事件也要继续换位。
+            moveAtCenter()
         }
     }
     Column {
@@ -174,15 +189,6 @@ internal fun ReorderableQueue(
                     enabled = !saving && draggedId == null,
                     onPlay = { onPlay(id) },
                     onRemove = { onRemove(id) },
-                    handleModifier = Modifier.pointerInput(id, saving) {
-                        // 按住把手直接拖，不必先长按 —— 与库列表的手感保持一致。
-                        detectDragGestures(
-                            onDragStart = { beginDrag(id) },
-                            onDrag = { change, amount -> change.consume(); dragBy(amount.y) },
-                            onDragEnd = { endDrag() },
-                            onDragCancel = { cancelDrag() },
-                        )
-                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .zIndex(if (active) 1f else 0f)
@@ -210,7 +216,7 @@ internal fun ReorderableQueue(
     }
 }
 
-/** 队列行：卡片底 + 拖动把手 + 序号 + 圆形播放入口 + 移除。 */
+/** 队列行：序号 + 标题/副标题 + 圆形播放入口 + 移除。拖动靠长按整行。 */
 @Composable
 private fun QueueRow(
     index: Int,
@@ -223,7 +229,6 @@ private fun QueueRow(
     enabled: Boolean,
     onPlay: () -> Unit,
     onRemove: () -> Unit,
-    handleModifier: Modifier = Modifier,
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -236,20 +241,9 @@ private fun QueueRow(
         tonalElevation = 0.dp,
     ) {
         Row(
-            Modifier.padding(start = 8.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+            Modifier.padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                Modifier.size(width = 28.dp, height = 48.dp).then(handleModifier),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.Default.DragHandle,
-                    "拖动排序：$title",
-                    Modifier.size(18.dp),
-                    tint = colors.onSurfaceVariant.copy(alpha = 0.55f),
-                )
-            }
             Box(
                 Modifier.size(24.dp).clip(CircleShape)
                     .background(if (current) colors.primary else colors.surfaceVariant.copy(alpha = 0.7f)),
