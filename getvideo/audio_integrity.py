@@ -6,10 +6,13 @@ from .db import session_scope, next_updated_seq
 from .models import Track
 
 
-def repair_legacy_audio_sizes() -> list[int]:
+def repair_legacy_audio_sizes(*, owner_scope: str | None = None) -> list[int]:
     repaired = []
     with session_scope() as session:
-        for track in session.execute(select(Track).where(Track.deleted == 0)).scalars():
+        stmt = select(Track).where(Track.deleted == 0)
+        if owner_scope is not None:
+            stmt = stmt.where(Track.owner_scope == owner_scope)
+        for track in session.execute(stmt).scalars():
             path = settings.audio_dir / track.audio_path
             if not path.is_file() or not track.audio_sha256:
                 continue

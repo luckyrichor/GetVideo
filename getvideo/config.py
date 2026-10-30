@@ -50,6 +50,23 @@ class Settings(BaseSettings):
     douyin_client_secret: str = ""
     douyin_redirect_uri: str = ""
 
+    # 博主批量：范围上限 50 条/任务，后台单 worker 顺序下载，避免把平台打急。
+    creator_max_items: int = 50
+    creator_max_start: int = 500
+    creator_request_interval: float = 0.15
+    creator_download_interval: float = 0.5
+    creator_worker_enabled: bool = True
+    creator_worker_poll_seconds: float = 2.0
+
+    # 抖音主页接口受 Argus 风控，默认允许 Playwright 浏览器桥接兜底。
+    # 没装 playwright 时会自动退回直连并给出明确错误。
+    douyin_browser: bool = True
+    douyin_browser_headless: bool = True
+    douyin_browser_timeout: float = 45.0
+    douyin_browser_max_scrolls: int = 20
+    # 留空用 playwright 自带的 Chromium；也可以填 chrome / msedge 使用系统浏览器。
+    douyin_browser_channel: str = ""
+
     def ensure_dirs(self) -> None:
         for d in (self.audio_dir, self.tmp_dir, self.cookie_dir):
             d.mkdir(parents=True, exist_ok=True)

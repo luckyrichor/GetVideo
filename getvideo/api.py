@@ -21,7 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import agent, credentials, login
-from . import accounts, extraction_agent
+from . import accounts, extraction_agent, creator_worker
 from .config import settings
 from .db import SessionLocal, init_db
 from .extractors import ExtractorError, NeedsLoginError
@@ -36,7 +36,11 @@ log = logging.getLogger(__name__)
 async def lifespan(_: FastAPI):
     init_db()
     settings.ensure_dirs()
-    yield
+    creator_worker.start()
+    try:
+        yield
+    finally:
+        creator_worker.stop()
 
 
 class PlatformCallbackAccessFilter(logging.Filter):
@@ -452,3 +456,9 @@ app.include_router(recreation_router)
 
 from .failure_reports import router as failure_report_router
 app.include_router(failure_report_router)
+
+from .creator_api import router as creator_router
+app.include_router(creator_router)
+
+from .library_api import router as library_router
+app.include_router(library_router)

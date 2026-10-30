@@ -32,6 +32,7 @@ SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, future=True)
 
 def init_db() -> None:
     from . import recreation_models  # register additive job tables before create_all
+    from . import creator_models  # register creator batch tables before create_all
     from .schema_migrations import migrate_tracks
     migrate_tracks(engine)
     Base.metadata.create_all(engine)

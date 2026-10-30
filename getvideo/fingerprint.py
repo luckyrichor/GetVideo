@@ -58,12 +58,13 @@ def similarity(left: list[int], right: list[int]) -> float:
     return best
 
 
-def duplicates(*, limit: int = 500, threshold: float = 0.95) -> list[dict]:
+def duplicates(*, limit: int = 500, threshold: float = 0.95, owner_scope: str | None = None) -> list[dict]:
     """只返回长度接近、指纹相似的候选。最多扫描 limit 条，避免无界平方比较。"""
     with session_scope() as s:
-        rows = list(s.execute(select(Track, AudioFingerprint)
-                              .join(AudioFingerprint, Track.id == AudioFingerprint.track_id)
-                              .where(Track.deleted == 0).order_by(Track.id).limit(limit)))
+        stmt = select(Track, AudioFingerprint).join(AudioFingerprint, Track.id == AudioFingerprint.track_id).where(Track.deleted == 0)
+        if owner_scope is not None:
+            stmt = stmt.where(Track.owner_scope == owner_scope)
+        rows = list(s.execute(stmt.order_by(Track.id).limit(limit)))
     decoded = [(track, fp, json.loads(fp.values_json)) for track, fp in rows]
     found = []
     for i, (a, fa, va) in enumerate(decoded):
@@ -77,11 +78,12 @@ def duplicates(*, limit: int = 500, threshold: float = 0.95) -> list[dict]:
     return found
 
 
-def backfill(limit: int = 500) -> int:
+def backfill(limit: int = 500, *, owner_scope: str | None = None) -> int:
     with session_scope() as s:
-        tracks = list(s.scalars(select(Track).outerjoin(AudioFingerprint)
-                               .where(Track.deleted == 0, AudioFingerprint.track_id.is_(None))
-                               .order_by(Track.id).limit(limit)))
+        stmt = select(Track).outerjoin(AudioFingerprint).where(Track.deleted == 0, AudioFingerprint.track_id.is_(None))
+        if owner_scope is not None:
+            stmt = stmt.where(Track.owner_scope == owner_scope)
+        tracks = list(s.scalars(stmt.order_by(Track.id).limit(limit)))
     count = 0
     for track in tracks:
         values = compute(settings.audio_dir / track.audio_path)

@@ -12,3 +12,7 @@ for _name in ("audio", "tmp", "cookie", "recreation"):
 os.environ["GETVIDEO_SECRET_KEY"] = base64.urlsafe_b64encode(os.urandom(32)).decode()
 os.environ["GETVIDEO_OLLAMA_MODEL"] = ""
 os.environ["ARK_API_KEY"] = ""
+# 测试里不启动后台博主 worker；需要时直接调用 creator_service.process_job。
+os.environ["GETVIDEO_CREATOR_WORKER_ENABLED"] = "0"
+# 测试环境没有 Chromium，抖音一律走直连/测试替身。
+os.environ["GETVIDEO_DOUYIN_BROWSER"] = "0"

@@ -60,8 +60,92 @@ class ResolvedLink:
         return f"{self.platform.value}:{self.video_id}"
 
 
+@dataclass(frozen=True)
+class CreatorRef:
+    """博主主页：批量任务只认主页，不认单条视频。"""
+
+    platform: Platform
+    creator_id: str
+    url: str
+    raw_url: str = ""
+
+    def __str__(self) -> str:  # pragma: no cover - 仅日志用
+        return f"{self.platform.value}:{self.creator_id}"
+
+
 class LinkError(ValueError):
     """分享文本里找不到可用的视频链接。"""
+
+
+@dataclass(frozen=True)
+class CreatorInput:
+    """手机用户常给的内容：抖音号、B 站 UID、昵称或完整主页链接。"""
+
+    platform: Platform | None
+    value: str
+    kind: str  # numeric | sec_uid | nickname | url
+
+
+_DOUYIN_LABEL_RE = re.compile(
+    r"(?:抖音号|抖音id|抖音ID|抖音|douyin(?:\s*id)?)\s*(?:[:：=\-]\s*)?([^\s:：=\-]{1,64})",
+    re.IGNORECASE,
+)
+_BILI_LABEL_RE = re.compile(
+    r"(?:b站|哔哩哔哩|bilibili)\s*(?:uid|id|号|用户)?\s*(?:[:：=\-]\s*)?([^\s:：=\-]{1,64})",
+    re.IGNORECASE,
+)
+_UID_LABEL_RE = re.compile(r"\buid\s*(?:[:：=\-]\s*)?(\d{1,20})", re.IGNORECASE)
+_SEC_UID_RE = re.compile(r"^MS4wLjAB[A-Za-z0-9_-]{8,}$")
+
+
+def _platform_of_value(value) -> Platform | None:
+    if value is None:
+        return None
+    if isinstance(value, Platform):
+        return value
+    try:
+        return Platform(str(value).strip().lower())
+    except ValueError:
+        raise LinkError(f"不支持的平台：{value}") from None
+
+
+def parse_creator_input(text: str, platform=None) -> CreatorInput:
+    """把「抖音号：xxx」「B站UID：xxx」「昵称」解析成统一查询。
+
+    带 URL 的输入仍由 ``resolve_creator()`` 处理；这里只负责非 URL 的
+    手机端常见输入。平台明确冲突时直接报错，避免悄悄查错账号。
+    """
+    raw = (text or "").strip()
+    if not raw:
+        raise LinkError("输入为空")
+
+    hint = _platform_of_value(platform)
+    label_platform: Platform | None = None
+    value: str | None = None
+
+    if m := _DOUYIN_LABEL_RE.search(raw):
+        label_platform, value = Platform.DOUYIN, m.group(1)
+    elif m := _BILI_LABEL_RE.search(raw):
+        label_platform, value = Platform.BILIBILI, m.group(1)
+    elif m := _UID_LABEL_RE.search(raw):
+        label_platform, value = Platform.BILIBILI, m.group(1)
+
+    if label_platform is not None and hint is not None and label_platform is not hint:
+        raise LinkError(f"输入写着 {label_platform.value}，但 platform 指定了 {hint.value}")
+    effective = label_platform or hint
+    value = (value if value is not None else raw).strip().strip('"\'“”')
+    value = value.strip(" \t\r\n,，。;；")
+
+    if not value:
+        raise LinkError("没有识别出抖音号、B 站 UID 或昵称")
+    if len(value) > 64:
+        raise LinkError("博主标识太长，请传抖音号、B 站 UID 或主页链接")
+
+    if _SEC_UID_RE.match(value):
+        return CreatorInput(Platform.DOUYIN, value, "sec_uid")
+    if value.isdigit():
+        return CreatorInput(effective, value, "numeric")
+    return CreatorInput(effective, value, "nickname")
 
 
 def find_urls(text: str) -> list[str]:
@@ -162,6 +246,70 @@ def _normalize_douyin(url: str) -> ResolvedLink | None:
         if modal.isdigit():
             return ResolvedLink(Platform.DOUYIN, modal, f"https://www.douyin.com/video/{modal}", url)
     return None
+
+
+_BILI_SPACE_RE = re.compile(r"^/(\d{1,20})(?:/(?:upload/)?video)?/?$")
+_DOUYIN_USER_RE = re.compile(r"^/(?:share/)?user/([A-Za-z0-9_-]{8,})/?$")
+
+
+def _creator_from_url(url: str) -> CreatorRef | None:
+    u = httpx.URL(url)
+    host = (u.host or "").lower()
+    path = u.path or "/"
+
+    if any(host == h or host.endswith("." + h) for h in _BILI_HOSTS):
+        mid = None
+        if host == "space.bilibili.com":
+            if m := _BILI_SPACE_RE.match(path):
+                mid = m.group(1)
+        elif m := re.match(r"^/space/(\d{1,20})/?$", path):
+            mid = m.group(1)
+        if mid:
+            return CreatorRef(Platform.BILIBILI, mid, f"https://space.bilibili.com/{mid}/video", url)
+
+    if any(host == h or host.endswith("." + h) for h in _DOUYIN_HOSTS):
+        if m := _DOUYIN_USER_RE.match(path):
+            sec_uid = m.group(1)
+            return CreatorRef(Platform.DOUYIN, sec_uid, f"https://www.douyin.com/user/{sec_uid}", url)
+
+    return None
+
+
+def resolve_creator(text: str, *, client: httpx.Client | None = None) -> CreatorRef:
+    """分享文本 / 主页链接 → CreatorRef。
+
+    只接受博主主页；单条视频链接会给出明确提示，避免用户把视频地址
+    当成博主地址提交后拿到一个空任务。
+    """
+    text = (text or "").strip()
+    if not text:
+        raise LinkError("输入为空")
+
+    candidates = find_urls(text)
+    if not candidates:
+        raise LinkError("没有找到博主主页链接")
+
+    errors: list[str] = []
+    for raw in candidates:
+        platform = _platform_of(raw)
+        if platform is None:
+            errors.append(f"不支持的站点: {_host_of(raw)}")
+            continue
+
+        url = expand(raw, client=client) if _is_short(raw) else raw
+        platform = _platform_of(url) or platform
+        if creator := _creator_from_url(url):
+            return creator
+
+        # 给出比「解析不出 id」更有用的提示。
+        if platform is Platform.BILIBILI and (BV_RE.search(url) or AV_RE.search(url)):
+            errors.append("这是单个视频链接；批量下载请传 UP 主空间主页（space.bilibili.com/<mid>）")
+        elif platform is Platform.DOUYIN and _DOUYIN_VIDEO_ID_RE.search(httpx.URL(url).path):
+            errors.append("这是单个视频链接；批量下载请传抖音博主主页（douyin.com/user/<sec_uid>）")
+        else:
+            errors.append(f"{platform.value} 链接里解析不出博主 id: {url}")
+
+    raise LinkError("; ".join(errors) or "没有找到支持的博主主页链接")
 
 
 def resolve(text: str, *, client: httpx.Client | None = None) -> ResolvedLink:

@@ -1,0 +1,6 @@
+# 可选依赖：抖音博主批量下载的浏览器桥接。
+# 安装后还需要下载 Chromium：
+#   .venv/bin/python -m playwright install chromium
+# B 站博主批量不需要这个文件。
+-r requirements.txt
+playwright>=1.45,<2

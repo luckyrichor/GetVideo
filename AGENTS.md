@@ -85,6 +85,9 @@ AI worker：在已配置服务器 Ark 凭据的环境运行 `.venv/bin/python -m
 
 ### 更新日志
 
+- 2026-10-30：补齐服务端 HTTP 接口（curl 可用）。新增 `POST /v2/resolve`、`GET/PATCH/DELETE /v2/tracks/{id}`、`POST /v2/tracks/{id}/restore`、`GET /v2/extraction-jobs`、`POST /v2/maintenance/reclassify|repair-audio-sizes|fingerprints/backfill`、`GET /v2/maintenance/duplicates`、`GET /v2/scheduler`、`POST /v2/scheduler/run-once`（只触发当前账号自己的组）。维护函数全部增加 `owner_scope`，不会跨账号扫描。完整 curl 清单见 `docs/http-api.md`。播放列表/定时播放/本地剪辑仍是 Android 本地 Room 数据，服务端没有对应表，未硬造接口。新增 3 项 library API 测试。
+- 2026-10-30：博主批量输入升级。`/v2/creators` 的 `url` 字段（兼容 `input`/`text` 别名）现在接受主页 URL、分享文案、裸抖音号、B站 UID、UP 主昵称；新增可选 `platform` 消除纯数字歧义。B 站 UID/昵称已真实联网验证（`碧诗`/`B站UID：2` 均解析到 mid=2）。抖音号先走公开 `iesdouyin user/info?unique_id=` 换 `sec_uid`（无需登录）；主页抓取走浏览器桥接，无登录 Cookie 时用干净上下文。已真实验证抖音号 `67194609689`→「小叶稚」→259 个作品，并下载按发布时间最新一条 `7699794704686239011`：932,664 字节 MP4、17.1 秒、H.264 1080×1440 + AAC；临时产物和临时库已删除，未写生产。抖音号/昵称搜索仍需要登录 Cookie。测试 19 项博主用例通过。
+- 2026-10-29：新增博主主页批量下载后端（APK 未改）。`/v2/creators/preview|jobs` 支持 B 站/抖音主页、start/count 范围、互动数据、后台任务、取消/重试；新增 `creator_jobs`/`creator_items` 表、单线程 worker、账号隔离。B 站已真实预览 mid=2 并下载 `BV1ujNV6qEXg`（720,706 字节 MP4，H.264+AAC）；抖音主页受 Argus 风控，实现直连 + 可选 Playwright 浏览器桥接；浏览器桥接已用本地假主页 + 系统 Chrome 验证，当前环境无抖音登录 Cookie，未做真实抖音验收。详见 `docs/creator-batch-download.md`。
 - 2026-10-28：0.3.10（code 17）。加回内置壁纸「芙宁娜立绘」（`still_furina_art`）：0.3.6 换壁纸时误删的旧版默认背景，从 git 历史取回并放大到长边 2200，静态壁纸 13 → 14 张。85 项单测、Lint 0 errors 通过。
 - 2026-10-28：0.3.9（code 16）。拖动第三次修正：去掉 `itemsIndexed` 的 key（避免 `LazyColumn` 按 key 锚定把列表自己滚走），加反向换位死区（避免行高不等导致的重叠区来回换），判定回到手指视口坐标并删掉 `residual`。85 项单测、Lint 0 errors 通过。
 

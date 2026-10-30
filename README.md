@@ -32,6 +32,10 @@ with-ark .venv/bin/python -m getvideo.recreation_worker
 
 认证 API 位于 `/v2/recreations`，客户端也可用 `.venv/bin/python -m getvideo.recreation_cli --help`；`GETVIDEO_SESSION` 是自己的 GetVideo 登录会话，不是模型 API Key。生成前须传当前描述 `revision` 和独立 `request_key`；下载、保存视频均按账号隔离。完整操作和部署说明见 [AI 重建说明](docs/ai-recreation.md)。
 
+## 博主主页批量下载（后端）
+
+服务端新增 `/v2/creators`：传 B 站 UP 主空间、抖音博主主页、裸抖音号、B站 UID 或昵称，按「最新优先、第 start 条起 count 条」预览或创建后台下载任务，并把播放、点赞、评论、分享、收藏、投币、弹幕等互动数据一并入库。任务按 `owner_scope` 隔离，下载仍走原 `pipeline.extract()`，不影响现有 APK 的同步契约。B 站走原生 WBI 接口，已用真实 UP 主完成预览和单条下载验证；抖音主页被 Argus 风控，支持直连优先 + 可选 Playwright 浏览器桥接，评论正文当前只取计数。接口、范围语义、部署和平台限制见 [博主主页批量下载](docs/creator-batch-download.md)。完整服务端 HTTP 接口和 curl 示例见 [HTTP API](docs/http-api.md)。
+
 ## 服务端
 
 需要 Python 3.12、FFmpeg / ffprobe。

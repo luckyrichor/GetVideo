@@ -1,8 +1,13 @@
 """B 站原生视频提取：下载 DASH 画面和声音，合并为完整 MP4。"""
 from __future__ import annotations
 
+import base64
 import hashlib
+import json
 import logging
+import math
+import random
+import string
 import tempfile
 import time
 import urllib.parse
@@ -58,6 +63,12 @@ def _key_from_url(url: str) -> str:
     return url.rsplit("/", 1)[-1].split(".")[0]
 
 
+def reset_wbi_cache() -> None:
+    """空间接口返回 412/-352 时丢弃缓存的 WBI 密钥，下次重新向 nav 取。"""
+    global _wbi_cache
+    _wbi_cache = None
+
+
 def _get_mixin_key(client: httpx.Client) -> str:
     global _wbi_cache
     now = time.time()
@@ -85,6 +96,32 @@ def _sign(params: dict, mixin_key: str) -> dict:
     )
     signed["w_rid"] = hashlib.md5((query + mixin_key).encode()).hexdigest()
     return signed
+
+
+def dm_params() -> dict[str, str]:
+    """WBI 空间接口还会看浏览器指纹参数，缺了容易被 412。
+
+    数值与 yt-dlp 跟随的前端算法一致；这里只需要形状合理，不追求和
+    真实浏览器逐位相同。
+    """
+    width, height = 1920, 1080
+    rnd = math.floor(114 * random.random())
+    wh = [2 * width + 2 * height + 3 * rnd, 4 * width - height + rnd, rnd]
+
+    scroll_top, scroll_left = 10, 10
+    rnd2 = math.floor(514 * random.random())
+    of = [3 * scroll_top + 2 * scroll_left + rnd2, 4 * scroll_top - 4 * scroll_left + 2 * rnd2, rnd2]
+
+    return {
+        "dm_img_list": "[]",
+        "dm_img_str": base64.b64encode(
+            "".join(random.choices(string.printable, k=random.randint(16, 64))).encode()
+        )[:-2].decode(),
+        "dm_cover_img_str": base64.b64encode(
+            "".join(random.choices(string.printable, k=random.randint(32, 128))).encode()
+        )[:-2].decode(),
+        "dm_img_inter": json.dumps({"ds": [], "wh": wh, "of": of}, separators=(",", ":")),
+    }
 
 
 def _parse_cookie_file(path: Path | None) -> dict[str, str]:

@@ -53,7 +53,8 @@ _FILTER_MSG = {
 class DouyinExtractor:
     platform = Platform.DOUYIN
 
-    def extract(self, link: ResolvedLink, *, cookie_file: Path | None = None) -> ExtractResult:
+    def extract(self, link: ResolvedLink, *, cookie_file: Path | None = None,
+                aweme: dict | None = None) -> ExtractResult:
         settings.ensure_dirs()
         cookies = _parse_cookie_file(cookie_file)
         if "ttwid" not in cookies:
@@ -68,13 +69,32 @@ class DouyinExtractor:
         }
 
         with httpx.Client(timeout=settings.http_timeout, headers=headers, cookies=cookies, follow_redirects=True) as client:
-            detail = self._fetch_detail(client, link)
+            detail = aweme if isinstance(aweme, dict) else None
+            if detail is None:
+                detail = self._fetch_detail(client, link)
             info = self._to_media_info(detail, link)
-            source, urls = self._video_sources(detail)
+            try:
+                source, urls = self._video_sources(detail)
+            except ExtractorError:
+                # 列表里偶尔缺播放地址；再试一次详情接口（可能被风控，保留原错误）。
+                if aweme is None:
+                    raise
+                detail = self._fetch_detail(client, link)
+                info = self._to_media_info(detail, link)
+                source, urls = self._video_sources(detail)
 
             with tempfile.TemporaryDirectory(dir=settings.tmp_dir) as td:
                 raw_path = Path(td) / f"{info.video_id}.bin"
-                self._download(client, urls, raw_path)
+                try:
+                    self._download(client, urls, raw_path)
+                except ExtractorError:
+                    # 列表里缓存的播放地址可能已过期；再请求一次详情接口兜底。
+                    if aweme is None:
+                        raise
+                    detail = self._fetch_detail(client, link)
+                    info = self._to_media_info(detail, link)
+                    source, urls = self._video_sources(detail)
+                    self._download(client, urls, raw_path)
                 # 保留画面和声音，校验后以 MP4 流拷贝封装。
                 out_path = remux_video(raw_path, Path(td) / info.video_id)
                 if probed := probe_duration(out_path):

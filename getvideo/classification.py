@@ -109,10 +109,12 @@ def apply(track: Track, result: Classified) -> None:
     track.classify_stage = result.stage
 
 
-def reclassify(*, limit: int = 100, force: bool = False) -> int:
+def reclassify(*, limit: int = 100, force: bool = False, owner_scope: str | None = None) -> int:
     """批量补分类；推断在事务外完成，乐观检查避免覆盖并发更新。"""
     with session_scope() as s:
         stmt = select(Track).where(Track.deleted == 0)
+        if owner_scope is not None:
+            stmt = stmt.where(Track.owner_scope == owner_scope)
         if not force:
             stmt = stmt.where((Track.classify_stage.is_(None)) | (Track.classify_stage != "ai"))
         rows = list(s.scalars(stmt.order_by(Track.id).limit(limit)))

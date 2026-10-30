@@ -49,7 +49,7 @@ def _sha256(path: Path, chunk: int = 1 << 20) -> str:
     return h.hexdigest()
 
 
-def _cookie_file_for(user_id: str | None, platform: Platform) -> Path | None:
+def cookie_file_for(user_id: str | None, platform: Platform) -> Path | None:
     """按优先级取 cookie：用户凭证 > 全局手工凭证 > 访客预热。
 
     访客 cookie 拿不到会员音质，但没有它 B 站直接回 412，所以它是
@@ -69,6 +69,10 @@ def _cookie_file_for(user_id: str | None, platform: Platform) -> Path | None:
     return ensure_guest_cookies(platform)
 
 
+# 旧名字保留，避免调度器等已有调用点被迫一起改。
+_cookie_file_for = cookie_file_for
+
+
 @contextmanager
 def _link_lock(platform: str, video_id: str):
     """同一来源的并发提取串行化，防止文件覆盖与数据库去重互相竞态。"""
@@ -78,7 +82,8 @@ def _link_lock(platform: str, video_id: str):
         yield
 
 
-def extract(raw_input: str, *, user_id: str | None = None, force: bool = False, owner_scope: str = "legacy") -> ExtractOutcome:
+def extract(raw_input: str, *, user_id: str | None = None, force: bool = False, owner_scope: str = "legacy",
+            prefetched_media: dict | None = None) -> ExtractOutcome:
     """主入口：一段分享文本进，一条视频记录出。
 
     force=True 时忽略去重，重新下载并覆盖。
@@ -137,7 +142,12 @@ def extract(raw_input: str, *, user_id: str | None = None, force: bool = False, 
 
             # 3. 下载 + 转码
             try:
-                result = get_extractor(link.platform).extract(link, cookie_file=_cookie_file_for(user_id, link.platform))
+                extractor = get_extractor(link.platform)
+                if prefetched_media is not None and link.platform is Platform.DOUYIN:
+                    result = extractor.extract(link, cookie_file=cookie_file_for(user_id, link.platform),
+                                               aweme=prefetched_media)
+                else:
+                    result = extractor.extract(link, cookie_file=cookie_file_for(user_id, link.platform))
             except NeedsLoginError as exc:
                 # 带着凭证还被要求登录 —— 说明这份凭证过期了，标记掉，
                 # 免得后续每次请求都拿它去撞同一堵墙

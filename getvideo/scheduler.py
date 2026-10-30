@@ -15,7 +15,7 @@ from yt_dlp import YoutubeDL
 from .config import ROOT, settings
 from .db import session_scope
 from .models import CrawlState
-from .pipeline import _cookie_file_for, extract
+from .pipeline import cookie_file_for, extract
 from .sharelink import Platform
 
 log = logging.getLogger(__name__)
@@ -72,7 +72,7 @@ def load_schedule(path: Path) -> Schedule:
 
 
 def search_bilibili(keyword: str, limit: int, user_id: str | None = None) -> list[str]:
-    cookie = _cookie_file_for(user_id, Platform.BILIBILI)
+    cookie = cookie_file_for(user_id, Platform.BILIBILI)
     options = {"quiet": True, "extract_flat": True, "skip_download": True,
                "socket_timeout": settings.http_timeout, "retries": 1,
                "extractor_retries": 1, "cachedir": False}
