@@ -1,5 +1,23 @@
 # GetVideo 工作约定
 
+## 当前交接：HTTPS 项目路径迁移（2026-10-31）
+
+- 状态：用户确认抖音 OAuth 原本未配置，不再将新增能力作为旧入口下线前提，并明确要求关闭 8443。**公网现仅保留 `https://43.142.37.199/getvideo/`；8443 已无监听，外部连接失败，用户已确认删除云防火墙 8443 规则，专属证书续期 timer 已 disabled/inactive。**
+- 本机：GitHub main 已同步为 `3dccb1c`；本轮在 `feat/https-project-path` 开发，用户已要求合入 main、推送并发布 v0.3.11；最终版本以 Git 提交及 Release 标签核对。详细实施与回滚见 [迁移说明](docs/https-project-path-migration.md)，步骤记录见 [实施计划](docs/superpowers/plans/2026-10-31-https-project-path.md)。
+- 新公网入口：`https://43.142.37.199/getvideo/`。443 现有站点 include `/etc/nginx/snippets/getvideo-path.conf`，转发至 loopback 8900。TX 源码基础从 b4d80ef 快进至 3dccb1c，再部署本轮后端修改；3dccb1c 是本轮开发基线，不是迁移功能的最终发布提交。
+- 原配置与 SQLite 一致性私有备份：服务器 `/home/ubuntu/project/GetVideo-backups/https443-20261031T142730Z`。共享 443 配置还存在独立新增的 getaudio-prefix.conf include；回滚只撤除 GetVideo 自己的 include，不能整份恢复 GetAudio 配置备份。
+- 手机：ADB `17ead82e`，型号 `23013RK75C`；同包同固定证书覆盖升级为 0.3.11 (18)，未卸载。原会话和 5 个已有媒体保留，服务器设置显示新地址。验收测试包已卸载，正式 App 保留；手机代理为 null，无 ADB reverse。
+- 关键实现：官方旧 URL 定向映射；网络 URL 与历史身份分开，Room scope、同步游标、媒体 ID、AI 缓存和 Agent 回执沿用旧身份；AtomicFile 直接 openRead 支持 .bak 恢复，账号原子保存；失败队列规范化地址并保留 owner 约束。自定义服务器和显式本机模式不迁移。统一资源拼接保留 /getvideo/，逐跳凭据检查包含项目路径。
+- 验证：删除旧部署模板后，已将 test_nginx_account_paths 改为检查新前缀与精确 callback 的权限规则；TX 完整回归重新通过。Android **91 项单测通过，Lint 0 errors / 25 warnings**，release 与同签名 AndroidTest 构建通过；TX **210 项测试通过**，1 条既有弃用警告。本机 FFmpeg 无 chromaprint，原指纹基线用例失败，不能声称本机全绿。
+- 真机原会话/同步/本地播放与 AtomicFile 备份恢复验收 PASS；手机隔离账号的注册/登录、B站服务器提取、视频下载字节数/SHA-256/206 Range、下载视频播放、手机直接提取与播放均 PASS。用户已确认 B站扫码授权，App 显示有效和凭证已保存。公网 AI 素材上传、源下载哈希、匿名下载拒绝和跨项目会话隔离通过；未调用付费 AI 生成。
+- 抖音能力返回 available=false；新 callback 路由和日志脱敏有自动测试，但真实 OAuth 未配置/未验收。新回调应登记为 `https://43.142.37.199/getvideo/account/platform-auth/douyin/callback`，未来增加该能力时在新路径下配置和实测，不恢复旧端口。没有把参数校验 422 当成授权成功。
+- 其他项目：当前 GetAudio `/getaudio/health` 正常；其旧根 `/health` 已由独立变更返回 404，本任务未改动。Paperdrift、Mihomo 只检查了基础 HEAD 路由响应，未声称其他项目全功能验收。两轮独立代码审查后没有双入口交付阻断问题。
+- 本轮 **4 个隔离测试账号、3 条测试视频、1 个 AI 源项目已定向清理**，回查为零；共享文件引用与真实账号保留。不要重新创建这些 fixture；临时日志在 `/private/tmp/getvideo-443-*`，不含密码和 token。签名测试包已经移除。
+- 最终包：`artifacts/getvideo-0.3.11-release.apk`；SHA-256 `2e827c6d46b4eb6b29906916da614a2e3fb967d994101b9013df0416dbd004e6`，固定发布证书 `9d58feae…092b7337`；不是首次构建的旧产物。
+- 飞书已追加并回查：我的文档库/GetVideo/[开发记录](https://kcn0pbn0hwo0.feishu.cn/wiki/PXJgwK76ZicnTokvJp9c2OI4nNg)，2026-10-31 HTTPS 迁移节及旧入口下线更新，codex profile、--as user，来源明确写为 GetVideo@3dccb1c + 未提交修改。底层文档 KtR5dQAyRo9tYDxWznqcciLOnUb；项目目录 P79zwhJO2iroF5kkdLscarppnrc。
+- 旧入口关闭记录：原 sites-enabled/getvideo 已移除，原 sites-available/getvideo 归档至服务器 `/home/ubuntu/project/GetVideo-backups/retire8443-20261031T151742Z`；nginx -t/reload 成功。未改动共享 443 证书续期。防火墙删除由用户在腾讯云控制台完成，未将外部连接超时冒充规则列表独立回查。
+- 下一步：入口迁移已完成；抖音 OAuth 以后按新路径增补，当前不新增。本轮发布版本为 v0.3.11 / Android 0.3.11 (18)；提交、推送与 Release 以 GitHub 实际记录核验，勿将基础提交冒充完整发布版本。
+
 - 独立视频项目，来源 GetAudio@bd4aa630ac88a84bf364a48ce5127e5d81a3ad5b。
 - 保留完整画面与声音；不得将音频/BGM 的下载当成视频提取成功。
 - 保持原账号隔离、平台凭据、增量同步、库操作、播放列表及 Agent 确认执行逻辑。
@@ -71,7 +89,7 @@ AI worker：在已配置服务器 Ark 凭据的环境运行 `.venv/bin/python -m
 
 ### 决策、限制与下一步
 
-1. 保持现有签名和包名以支持升级；release 仍采用已有开发签名，不将其描述为正式商店签名。每次交付需核对 APK 的版本、包名、签名和 SHA-256。
+1. 保持现有签名和包名以支持升级；release 使用本项目固定发布证书 CN=GetVideo，按顶部强制签名规则执行。每次交付需核对 APK 的版本、包名、签名和 SHA-256。
 2. 原有 README 的顶部版本和 Android 版本说明落后于 Gradle；取实际 Gradle 和 APK 元数据为准。
 3. 下次先完成 30 条真实队列下的长按拖动验收（首行下拖、贴边上下滚、快速甩动）、动态背景与音频共存、切后台/锁屏恢复、账号切换；当前不能据本机自动测试宣称真机无问题。
 4. 本次仅为 APK 同步构建；需要更新生产服务时另按对应任务执行，不因拉代码自动重启服务。

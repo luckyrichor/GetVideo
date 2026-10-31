@@ -179,11 +179,12 @@ def test_douyin_exchange_uses_server_secret_and_verified_subject(monkeypatch):
 def test_callback_access_log_redacts_code_and_state():
     import logging
     from getvideo.api import PlatformCallbackAccessFilter
-    target = '/account/platform-auth/douyin/callback?code=private-code&state=private-state'
-    record = logging.LogRecord('uvicorn.access', logging.INFO, '', 0, '%s %s %s %s %s', ('client', 'GET', target, '1.1', 200), None)
-    assert PlatformCallbackAccessFilter().filter(record)
-    assert 'private-code' not in record.getMessage() and 'private-state' not in record.getMessage()
-    assert '/account/platform-auth/douyin/callback' in record.getMessage()
+    for prefix in ('', '/getvideo'):
+        target = prefix + '/account/platform-auth/douyin/callback?code=private-code&state=private-state'
+        record = logging.LogRecord('uvicorn.access', logging.INFO, '', 0, '%s %s %s %s %s', ('client', 'GET', target, '1.1', 200), None)
+        assert PlatformCallbackAccessFilter().filter(record)
+        assert 'private-code' not in record.getMessage() and 'private-state' not in record.getMessage()
+        assert prefix + '/account/platform-auth/douyin/callback' in record.getMessage()
 
 
 def test_other_phone_cannot_unbind_owner_binding(flow):

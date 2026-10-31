@@ -149,7 +149,8 @@ def logout(x_getvideo_session: str | None = Header(None), session: Session = Dep
 
 async def protect_account_ids(request: Request):
     """Legacy clients retain guest IDs, but cannot impersonate registered accounts."""
-    if request.url.path.startswith(("/account/", "/agent/v2/", "/v2/")):
+    path = request.url.path.removeprefix(request.scope.get("root_path", ""))
+    if path.startswith(("/account/", "/agent/v2/", "/v2/")):
         return
     identity = request.path_params.get("user_id")
     if request.method in {"POST", "PUT"} and "application/json" in request.headers.get("content-type", ""):

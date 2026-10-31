@@ -13,14 +13,15 @@ class AgentOutbox(private val context: Context) {
     @Serializable
     data class Receipt(val userId: String, val server: String, val actionId: String, val result: AgentToolResult)
     private fun file(user: String, server: String): AtomicFile {
-        val scope = MessageDigest.getInstance("SHA-256").digest("$user|$server".toByteArray())
+        val scope = MessageDigest.getInstance("SHA-256").digest("$user|${serverIdentityUrl(server)}".toByteArray())
             .joinToString("") { "%02x".format(it) }
         return AtomicFile(File(context.filesDir, "agent-receipt-$scope.enc"))
     }
     fun load(user: String, server: String): Receipt? = runCatching {
         val data = file(user, server).openRead().use { it.readBytes() }
         Json.decodeFromString<Receipt>(String(AccountStore.decrypt(data), Charsets.UTF_8))
-            .takeIf { it.userId == user && it.server == server }
+            .takeIf { it.userId == user && canonicalServerUrl(it.server) == canonicalServerUrl(server) }
+            ?.copy(server = canonicalServerUrl(server))
     }.getOrNull()
     fun save(receipt: Receipt) {
         val atomic = file(receipt.userId, receipt.server)

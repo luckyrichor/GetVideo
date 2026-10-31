@@ -28,7 +28,7 @@ class Settings(private val context: Context) {
 
     suspend fun setServerUrl(url: String) {
         // 结尾必须有斜杠，否则 Retrofit 会把 baseUrl 的最后一段吃掉
-        val normalized = url.trim().takeIf { it.isNotEmpty() }?.trimEnd('/')?.plus("/") ?: ""
+        val normalized = canonicalServerUrl(url)
         // Once committed, finish account visibility and queue reconciliation even if the dialog closes.
         withContext(NonCancellable) {
             context.dataStore.edit { it[serverKey] = normalized }

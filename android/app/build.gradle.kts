@@ -54,6 +54,8 @@ if (releaseSigning == null && releaseTaskRequested && providers.gradleProperty("
 
 android {
     namespace = "com.getvideo.app"
+    // Opt-in real-device checks can target the fixed-signature release without reinstalling as debug.
+    testBuildType = providers.gradleProperty("getvideoTestBuildType").getOrElse("debug")
     compileSdk = 34
 
     signingConfigs {
@@ -74,8 +76,8 @@ android {
         minSdk = 26          // Media3 和后台播放在 8.0 以下坑太多
         testInstrumentationRunner = providers.gradleProperty("getvideoTestRunner").getOrElse("com.getvideo.app.BatchDeleteInstrumentation")
         targetSdk = 34
-        versionCode = 17
-        versionName = "0.3.10"
+        versionCode = 18
+        versionName = "0.3.11"
         manifestPlaceholders["appLabel"] = "@string/app_name"
 
     }

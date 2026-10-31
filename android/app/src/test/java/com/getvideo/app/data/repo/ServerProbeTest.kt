@@ -8,6 +8,23 @@ import java.net.ServerSocket
 import kotlin.concurrent.thread
 
 class ServerProbeTest {
+    @Test fun `health check preserves project prefix`() = runBlocking {
+        ServerSocket(0).use { server ->
+            var requestLine = ""
+            val worker = thread(isDaemon = true) {
+                server.accept().use { socket ->
+                    val reader = socket.getInputStream().bufferedReader()
+                    requestLine = reader.readLine()
+                    while (!reader.readLine().isNullOrEmpty()) { }
+                    val body = "{\"ok\":true,\"app\":\"GetVideo\"}"
+                    socket.getOutputStream().write("HTTP/1.1 200 OK\r\nContent-Length: ${body.length}\r\nConnection: close\r\n\r\n$body".toByteArray())
+                }
+            }
+            probeServerHealth("http://127.0.0.1:${server.localPort}/getvideo/", OkHttpClient())
+            worker.join(1000)
+            assertEquals("GET /getvideo/health HTTP/1.1", requestLine)
+        }
+    }
     @Test fun `health response completes and validates content`() = runBlocking {
         ServerSocket(0).use { server ->
             val worker = thread(isDaemon = true) {

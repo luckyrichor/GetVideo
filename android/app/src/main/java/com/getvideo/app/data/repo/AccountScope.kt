@@ -4,7 +4,7 @@ import java.security.MessageDigest
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
 fun cloudScopeKey(server: String, userId: String): String = MessageDigest.getInstance("SHA-256")
-    .digest((server.trim().trimEnd('/').toHttpUrl().toString() + "|" + userId).toByteArray())
+    .digest((serverIdentityUrl(server).toHttpUrl().toString() + "|" + userId).toByteArray())
     .joinToString("") { "%02x".format(it) }
 
 fun chooseCloudLocalId(remoteId: Long, used: Set<Long>): Long {

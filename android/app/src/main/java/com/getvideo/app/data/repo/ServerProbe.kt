@@ -12,7 +12,7 @@ import kotlin.coroutines.resumeWithException
 /** Cancellable, bounded health probe. Never shares the extraction request's long timeout. */
 internal suspend fun probeServerHealth(baseUrl: String, client: OkHttpClient, timeoutMillis: Long = 10_000) {
     val url = baseUrl.toHttpUrl()
-    require(url.encodedPath == "/" && url.query == null && url.fragment == null && url.username.isEmpty() && url.password.isEmpty()) { "请输入不含路径或凭据的服务器根地址" }
+    require(url.encodedPath.endsWith("/") && url.query == null && url.fragment == null && url.username.isEmpty() && url.password.isEmpty()) { "请输入以 / 结尾且不含查询参数或凭据的服务器基础地址" }
     withTimeout(timeoutMillis) {
         suspendCancellableCoroutine<Unit> { continuation ->
             val call = client.newCall(Request.Builder().url(url.newBuilder().addPathSegment("health").build()).build())

@@ -33,7 +33,7 @@ internal class FailureOutbox(private val directory: File) {
     fun pending(): List<JSONObject> = directory.listFiles().orEmpty().filter { it.name.endsWith(".json") }
         .sortedBy { it.lastModified() }.mapNotNull { runCatching { JSONObject(it.readText()) }.getOrNull() }
     fun eligible(server: String, owner: String): List<JSONObject> = pending().filter {
-        it.optString("server") == server && it.optString("owner").let { saved -> saved.isEmpty() || saved == owner }
+        canonicalServerUrl(it.optString("server")) == canonicalServerUrl(server) && it.optString("owner").let { saved -> saved.isEmpty() || saved == owner }
     }
     fun defer(id: String) { runCatching { UUID.fromString(id); File(directory, "$id.json").setLastModified(System.currentTimeMillis()) } }
     fun bindOwner(id: String, owner: String): Boolean = synchronized(ownerLock) {

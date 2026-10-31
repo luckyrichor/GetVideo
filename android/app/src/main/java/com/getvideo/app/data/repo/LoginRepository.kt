@@ -55,5 +55,5 @@ class LoginRepository(context: Context, private val owner: AccountStore.Account)
 
     /** 二维码图片的完整地址，交给 Coil 加载。 */
     suspend fun qrImageUrl(path: String): String =
-        owner.serverUrl.trimEnd('/') + path
+        serverResourceUrl(owner.serverUrl, path).toString()
 }

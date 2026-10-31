@@ -32,8 +32,8 @@ class FirstPlaybackInstrumentation : Instrumentation() {
                     .put("data".toByteArray()).putInt(size * 2)
                 repeat(size) { tone.putShort((sin(it * 2 * Math.PI * 660 / 44100) * 1000).toInt().toShort()) }
                 file.writeBytes(tone.array())
-                val track = TrackEntity(id, "local", "first-playback-check", "First playback check", "验证", 20.0,
-                    file.length(), "wav", "", "", 0, localPath = file.path)
+                val track = TrackEntity(id=id, platform="local", videoId="first-playback-check", title="First playback check", uploader="验证", durationSec=20.0,
+                    audioBytes=file.length(), audioFormat="wav", sourceUrl="", downloadUrl="", updatedSeq=0, localPath = file.path)
                 val listId = db.playlistDao().insert(PlaylistEntity(name = "First playback check"))
                 db.playlistDao().markDefault(listId)
                 db.trackDao().upsertLocal(track)

@@ -28,6 +28,7 @@ from .extractors import ExtractorError, NeedsLoginError
 from .models import AgentMemory, Track
 from .pipeline import extract as run_extract
 from .sharelink import LinkError
+from .public_path import PublicPathMiddleware
 
 log = logging.getLogger(__name__)
 
@@ -48,7 +49,7 @@ class PlatformCallbackAccessFilter(logging.Filter):
         # Uvicorn access records contain the request target at args[2].
         if isinstance(record.args, tuple) and len(record.args) == 5:
             args = list(record.args)
-            if isinstance(args[2], str) and args[2].split("?", 1)[0] == "/account/platform-auth/douyin/callback":
+            if isinstance(args[2], str) and args[2].split("?", 1)[0].endswith("/account/platform-auth/douyin/callback"):
                 args[2] = args[2].split("?", 1)[0]
                 record.args = tuple(args)
         return True
@@ -58,6 +59,7 @@ logging.getLogger("uvicorn.access").addFilter(PlatformCallbackAccessFilter())
 
 app = FastAPI(title="GetVideo", version="0.2.0", lifespan=lifespan,
               dependencies=[Depends(accounts.protect_account_ids)])
+app.add_middleware(PublicPathMiddleware)
 app.include_router(accounts.router)
 app.include_router(extraction_agent.router)
 

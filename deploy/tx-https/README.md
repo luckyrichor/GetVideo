@@ -1,5 +1,9 @@
 # TX GetVideo HTTPS 部署记录
 
+## 2026-10-31 新入口
+
+当前 App 使用 `https://43.142.37.199/getvideo/`，模板见 `getvideo-path.conf`。旧 8443 已关闭，专属续期已停用，云端放行规则由用户删除。抖音 OAuth 原本未配置，未来在新路径下增加，不恢复旧端口。完整配置、验证和回滚说明见 [迁移文档](../../docs/https-project-path-migration.md)。下文为早期部署的历史记录。
+
 执行：Codex，2026-10-17。来源：GetVideo@a87a9ed，加本次工作区修复与部署修改；当前发布版本 0.1.2。部署源码一致性以 `artifacts/source-manifest-0.1.2.sha256` 核验，不将未提交内容冒充原始提交。
 
 ## 实际部署

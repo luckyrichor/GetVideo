@@ -19,7 +19,7 @@ class AccountIsolationInstrumentation : Instrumentation() {
                 targetContext.deleteDatabase(name)
                 db = Room.databaseBuilder(targetContext, AppDatabase::class.java, name).build()
                 val dao = db!!.trackDao()
-                fun track(id: Long, scope: String) = TrackEntity(id,"local","fixture-$id","Fixture","验证",1.0,1,"wav","","",0,cloudScope=scope)
+                fun track(id: Long, scope: String) = TrackEntity(id=id,platform="local",videoId="fixture-$id",title="Fixture",uploader="验证",durationSec=1.0,audioBytes=1,audioFormat="wav",sourceUrl="",downloadUrl="",updatedSeq=0,cloudScope=scope)
                 dao.upsertAll(listOf(track(-1,"local"), track(5,"acct_a"), track(6,"acct_b")))
                 dao.setActive(ActiveScopeEntity(scope="acct_a"))
                 check(dao.allNow().map { it.id }.toSet() == setOf(-1L,5L))

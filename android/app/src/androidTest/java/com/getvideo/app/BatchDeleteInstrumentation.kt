@@ -40,9 +40,9 @@ class BatchDeleteInstrumentation : Instrumentation() {
                             check(db.trackDao().byId(id) == null) { "Synthetic ID already exists; abort to preserve existing audio" }
                             val file = File(context.filesDir, "audio/batchcheck${index + 1}.wav")
                             writeTone(file, index + 1)
-                            db.trackDao().upsertLocal(TrackEntity(id, "local", "batchcheck${index + 1}",
-                                "BatchCheck ${if (index == 0) "A" else "B"}", "验证视频", (index + 1).toDouble(),
-                                file.length(), "wav", "", "", 0, audioSha256 = "fixture-$index", localPath = file.path))
+                            db.trackDao().upsertLocal(TrackEntity(id=id, platform="local", videoId="batchcheck${index + 1}",
+                                title="BatchCheck ${if (index == 0) "A" else "B"}", uploader="验证视频", durationSec=(index + 1).toDouble(),
+                                audioBytes=file.length(), audioFormat="wav", sourceUrl="", downloadUrl="", updatedSeq=0, audioSha256 = "fixture-$index", localPath = file.path))
                         }
                         val list = playlistDao.insert(PlaylistEntity(name = "BatchCheck"))
                         playlistDao.add(ids.mapIndexed { index, id -> PlaylistItemEntity(list, id, orderIndex = index) })

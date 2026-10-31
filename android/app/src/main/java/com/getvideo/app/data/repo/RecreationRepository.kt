@@ -76,7 +76,7 @@ class RecreationRepository(private val context: Context, val account: AccountSto
         if (dest.isFile && sha(dest) == hash) return@withContext dest
         val temp = File.createTempFile("ai-result-", ".part", cache)
         try {
-            val url = account.serverUrl.toHttpUrl().resolve(relative) ?: error("无效视频地址")
+            val url = serverResourceUrl(account.serverUrl, relative)
             ApiProvider.okHttp(account).newCall(Request.Builder().url(url).build()).execute().use { response ->
                 check(response.isSuccessful) { "视频下载失败（HTTP ${response.code}）" }
                 response.body?.byteStream()?.use { input -> temp.outputStream().use { out ->

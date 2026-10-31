@@ -4,6 +4,7 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import android.util.AtomicFile
 import java.io.File
 import java.security.KeyStore
 import javax.crypto.Cipher
@@ -46,11 +47,25 @@ object AccountStore {
         appContext = context.applicationContext
         file = File(context.filesDir, "account-session.enc")
         state.value = runCatching {
-            if (!file.exists()) return@runCatching null
-            val data = JSONObject(String(decrypt(file.readBytes()), Charsets.UTF_8))
-            Account(data.getString("user_id"), data.getString("phone"), data.getString("token"), data.getString("server"))
+            val data = JSONObject(String(decrypt(AtomicFile(file).openRead().use { it.readBytes() }), Charsets.UTF_8))
+            Account(data.getString("user_id"), data.getString("phone"), data.getString("token"), canonicalServerUrl(data.getString("server")))
         }.getOrNull()
-        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { refreshVisibility(context) }
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            // Rewriting is optional: canonicalize on every read, so process death cannot split DB identity.
+            TrackRepository.fileMutex.withLock {
+                state.value?.let { account -> runCatching { persist(account) } }
+            }
+            refreshVisibility(context)
+        }
+    }
+
+    private fun persist(account: Account) {
+        val data = JSONObject().put("user_id", account.userId).put("phone", account.phone)
+            .put("token", account.token).put("server", account.serverUrl).toString().toByteArray()
+        val atomic = AtomicFile(file)
+        val stream = atomic.startWrite()
+        try { stream.write(encrypt(data)); atomic.finishWrite(stream) }
+        catch (error: Exception) { atomic.failWrite(stream); throw error }
     }
 
     suspend fun save(session: AccountSession, baseUrl: String, expectedAccount: Account? = state.value) {
@@ -114,7 +129,7 @@ object AccountStore {
 
     fun sessionFor(url: HttpUrl): String? = state.value?.let { account ->
         val base = account.serverUrl.toHttpUrl()
-        if (isCredentialOrigin(url, base) && url.encodedPath.startsWith(base.encodedPath)) account.token else null
+        if (isCredentialOrigin(url, base)) account.token else null
     }
 
     fun requireSecureServer(baseUrl: String) {

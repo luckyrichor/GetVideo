@@ -240,8 +240,7 @@ class TrackRepository(private val context: Context) {
                 stage = "确认账号与归属"
                 val account = AccountStore.forServer(settings.serverUrlNow()) ?: error("请先登录 GetVideo 账号")
                 check(current.cloudScope == cloudScopeKey(account.serverUrl, account.userId)) { "旧视频没有可确认的服务器归属，请重新提取" }
-                val base = account.serverUrl.trimEnd('/')
-                val url = base + current.downloadUrl
+                val url = serverResourceUrl(account.serverUrl, current.downloadUrl)
                 val request = Request.Builder().url(url).build()
 
                 // 先写临时文件，完整了再改名 —— 中断的下载不会留下半个能播的文件
@@ -416,7 +415,7 @@ class TrackRepository(private val context: Context) {
         val staged = File.createTempFile("restore-", ".audio", audioDir)
         var committed = false
         try {
-            ApiProvider.okHttp(account).newCall(Request.Builder().url(account.serverUrl.trimEnd('/') + fresh.downloadUrl).build()).execute().use { response ->
+            ApiProvider.okHttp(account).newCall(Request.Builder().url(serverResourceUrl(account.serverUrl, fresh.downloadUrl)).build()).execute().use { response ->
                 check(response.isSuccessful) { "恢复失败：HTTP ${response.code}" }
                 val body = response.body ?: error("响应为空")
                 staged.outputStream().use { out -> body.byteStream().copyTo(out) }

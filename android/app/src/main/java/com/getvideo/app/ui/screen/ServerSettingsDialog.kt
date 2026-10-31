@@ -23,7 +23,7 @@ internal fun ServerSettingsDialog(close: () -> Unit) {
     var job by remember { mutableStateOf<Job?>(null) }
     LaunchedEffect(Unit) { address = Settings(context).serverUrlNow() }
     fun check(save: Boolean) {
-        val requestedAddress = address.trim().trimEnd('/') + "/"
+        val requestedAddress = canonicalServerUrl(address)
         busy = true; message = null
         job = scope.launch {
             try {
